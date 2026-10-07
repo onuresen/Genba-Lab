@@ -91,3 +91,8 @@ export function useIfcGeometry(key) {
     return cache.get(key) ?? null
   })
 }
+
+// Non-hook read for simulations: the mesh if it is already loaded, else null.
+export function getCachedGeometry(key) {
+  return key ? cache.get(key) ?? null : null
+}

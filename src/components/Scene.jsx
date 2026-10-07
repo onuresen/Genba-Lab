@@ -9,8 +9,7 @@ import Connection from './Connection'
 import Crane from './Crane'
 import CinematicMode from './CinematicMode'
 import WindArrows from './WindArrows'
-import RainSimulation from './RainSimulation'
-import WaterPressure from './WaterPressure'
+import WaterFlow from './WaterFlow'
 import FireCompartments from './FireCompartments'
 import ThermalOverlay from './ThermalOverlay'
 import FactoryGrid from './FactoryGrid'
@@ -158,6 +157,8 @@ export default function Scene({
   showWindArrows,
   windSpeed,
   showWaterSim,
+  rainfall,
+  onWaterResult,
   showThermal,
   showAcoustic,
   liftPlanMode,
@@ -398,10 +399,7 @@ export default function Scene({
       )}
 
       {!factoryMode && showWaterSim && (
-        <RainSimulation parts={parts} visible={visible} />
-      )}
-      {!factoryMode && showWaterSim && (
-        <WaterPressure parts={parts} visible={visible} windSpeed={windSpeed ?? 8} />
+        <WaterFlow parts={parts} visible={visible} rainfall={rainfall} onResult={onWaterResult} />
       )}
 
       {!factoryMode && showThermal && (

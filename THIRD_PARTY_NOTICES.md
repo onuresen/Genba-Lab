@@ -11,6 +11,7 @@ The built app bundles these libraries. Each keeps its own license.
 | [@react-three/fiber](https://github.com/pmndrs/react-three-fiber) | MIT | React renderer for three |
 | [@react-three/drei](https://github.com/pmndrs/drei) | MIT | three helpers |
 | [GSAP](https://gsap.com) | GSAP Standard License | Animation. Free, including commercial use: https://gsap.com/standard-license |
+| [three-mesh-bvh](https://github.com/gkjohnson/three-mesh-bvh) | MIT | Fast raycasting for the rain & water flow simulation. |
 | [jsPDF](https://github.com/parallax/jsPDF) | MIT | PDF export |
 | [lucide-react](https://github.com/lucide-icons/lucide) | ISC | Icons |
 

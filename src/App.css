@@ -789,6 +789,42 @@
 }
 .ifc-status--error { color: #c0392b; }
 
+/* ─── Rain & water flow ──────────────────────────────── */
+.rain-panel__title { font-weight: 700; font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: #0284c7; }
+.rain-panel__row { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 4px; }
+.rain-panel__note { font-size: 10px; line-height: 1.5; color: #7f8c8d; }
+.rain-presets { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; margin-top: 6px; }
+.rain-presets button {
+  padding: 4px 2px; border: 1px solid #dbeafe; border-radius: 5px; background: #f0f9ff;
+  font-size: 9px; font-weight: 700; color: #0369a1; cursor: pointer; line-height: 1.3;
+}
+.rain-presets button span { display: block; font-weight: 400; color: #64748b; }
+.rain-presets button.active { background: #0284c7; color: #fff; border-color: #0284c7; }
+.rain-presets button.active span { color: #e0f2fe; }
+.rain-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px; }
+.rain-stats div { display: flex; flex-direction: column; }
+.rain-stats strong { font-size: 18px; color: #0f172a; }
+.rain-stats span { font-size: 10px; color: #64748b; }
+.rain-bar { margin-bottom: 6px; }
+.rain-bar__label { display: flex; justify-content: space-between; font-size: 11px; color: #334155; }
+.rain-bar__track { height: 6px; border-radius: 3px; background: #e2e8f0; overflow: hidden; }
+.rain-bar__fill { height: 100%; }
+.rain-pond-row {
+  display: flex; justify-content: space-between; gap: 8px; width: 100%; padding: 3px 0;
+  border: none; background: none; font-size: 11px; color: #334155; cursor: pointer; text-align: left;
+}
+.rain-pond-row span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rain-pond-row strong { flex-shrink: 0; color: #1d4ed8; }
+.water-label {
+  padding: 2px 7px; border-radius: 4px; font: 600 10px 'Segoe UI', sans-serif; white-space: nowrap;
+  color: #fff; background: rgba(29, 78, 216, 0.88);
+}
+.water-label--ground { background: rgba(8, 145, 178, 0.88); }
+[data-theme="dark"] .rain-stats strong { color: #e2e8f0; }
+[data-theme="dark"] .rain-bar__label, [data-theme="dark"] .rain-pond-row { color: #cbd5e1; }
+[data-theme="dark"] .rain-bar__track { background: #334155; }
+[data-theme="dark"] .rain-presets button { background: #0c4a6e; border-color: #075985; color: #e0f2fe; }
+
 /* ─── IFC data (InfoPanel) ────────────────────────────── */
 .ifc-data { margin: 0; }
 .ifc-data-row {

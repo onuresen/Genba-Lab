@@ -10,6 +10,7 @@ import CranePanel from './components/CranePanel'
 import EarthquakePanel from './components/EarthquakePanel'
 import FloorPlanPanel from './components/FloorPlanPanel'
 import FirePanel from './components/FirePanel'
+import RainPanel from './components/RainPanel'
 import { useKit } from './components/KitContext'
 import IfcLoadButton from './components/IfcLoadButton'
 import { computeCraneLayout, partBounds } from './utils/craneLayout'
@@ -71,6 +72,8 @@ export default function App() {
 
   // ── Water simulation ─────────────────────────────────────
   const [showWaterSim, setShowWaterSim] = useState(false)
+  const [rainfall, setRainfall] = useState(50)          // mm/h
+  const [waterResult, setWaterResult] = useState(null)  // runoff result (or { busy })
 
   // ── Group C: Material overlays ───────────────────────────
   const [showThermal, setShowThermal] = useState(false)
@@ -548,6 +551,8 @@ export default function App() {
         showWindArrows={showWindArrows}
         windSpeed={windSpeed}
         showWaterSim={showWaterSim}
+        rainfall={rainfall}
+        onWaterResult={setWaterResult}
         showThermal={showThermal}
         showAcoustic={showAcoustic}
         liftPlanMode={liftPlanMode}
@@ -620,6 +625,18 @@ export default function App() {
           onToggleLiftPlan={handleToggleLiftPlan}
           craneCabView={craneCabView}
           onToggleCabView={() => setCraneCabView(v => !v)}
+        />
+      )}
+
+      {showWaterSim && (
+        <RainPanel
+          rainfall={rainfall}
+          onRainfall={setRainfall}
+          result={waterResult}
+          onSelectPart={id => {
+            const p = parts.find(x => x.id === id)
+            if (p) setSelected({ ...p, meta: p.variants[0].meta })
+          }}
         />
       )}
 

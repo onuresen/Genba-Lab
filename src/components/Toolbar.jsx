@@ -134,7 +134,7 @@ export default function Toolbar({
         </button>
         <button
           className={`tb-btn ${showWaterSim ? 'tb-btn--active' : ''}`}
-          title="Water Analysis"
+          title="Rain & water flow"
           onClick={onToggleWaterSim}
           disabled={factoryMode}
         >

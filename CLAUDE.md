@@ -38,6 +38,7 @@ Focus: architects and engineers, with Japanese context (耐震等級, fire ratin
 | Animation | GSAP | 3.15 |
 | Icons | lucide-react | 1.8 |
 | IFC | web-ifc (WASM, Web Worker) | 0.0.78 |
+| Raycasting | three-mesh-bvh | 0.9 |
 | Build | Vite | 8 |
 
 No Tailwind. Styles live in `src/App.css` plus inline styles. Dark mode via `[data-theme="dark"]` on `#root-container`.
@@ -99,7 +100,8 @@ Every simulation reads one array of **parts**. IFC import builds it (`ifcToKit.j
 | `cameraCmd` `{ type: 'preset'\|'frame', …, ts }` | Camera commands (change `ts` to re-fire) |
 | `darkMode` (localStorage `genba-lab-dark`), `showShortcuts`, `mobileSidebarOpen` | UI |
 | `showCrane`, `showCraneRadius`, `showSecondCrane`, `secondCraneX`, `liftPlanMode`, `liftStart`, `liftEnd`, `craneCabView` | Crane |
-| `showWindArrows`, `windSpeed`, `showWaterSim` | Wind + rain |
+| `showWindArrows`, `windSpeed` | Wind |
+| `showWaterSim`, `rainfall` (mm/h), `waterResult` | Rain & water flow |
 | `showThermal`, `showAcoustic` | Material overlays |
 | `fireMode`, `fireState`, `fireElapsed`, `fireIntensity`, `showFireCompartments` | Fire |
 | `showEarthquake`, `earthquakeMagnitude`, `isShaking`, `hasShaken`, `earthquakeCountdown` | Earthquake |
@@ -148,7 +150,7 @@ Real models are 20–100 m, not the 5 m Kit-of-Parts kit. Never hard-code world 
 | `FactoryGrid.jsx` | Prefab bay planner: real meshes, transport-size/weight/lead-time warnings, drag to resequence. |
 | `DimensionLines.jsx` | Model width/height/depth. |
 | `WindArrows.jsx`, `WindStreamlines.jsx` | Wind pressure arrows + streamlines. |
-| `RainSimulation.jsx`, `WaterPressure.jsx` | Rain + pressure planes. |
+| `WaterFlow.jsx` | Rain runoff on real surfaces: flow lines, moving droplets, ponds, drip zones, rain streaks. Recomputes on visibility / rainfall change. |
 | `FireEffects.jsx`, `FireCompartments.jsx` | Fire visuals; compartment boxes by storey vs BSL 500 m². |
 | `EarthquakeEffects.jsx` | Camera rumble, ground rings/faults (scaled), stress markers. |
 | `ThermalOverlay.jsx` | Thermal bridge nodes at connections. |
@@ -168,6 +170,7 @@ Real models are 20–100 m, not the 5 m Kit-of-Parts kit. Never hard-code world 
 | `GanttPanel.jsx` | Schedule by week; highlights parts in 3D. |
 | `CranePanel.jsx` | Crane specs, live lift load, wind, lift path planner, cab view, second crane. |
 | `EarthquakePanel.jsx`, `FirePanel.jsx` | Simulation controls + verdicts. |
+| `RainPanel.jsx` | Rainfall (mm/h, presets up to ゲリラ豪雨 100), catchment, runoff, pond/ground/drain shares, where water collects. |
 | `FloorPlanPanel.jsx` | 2D plan, SVG export. |
 | `ShortcutsModal.jsx`, `ShareButton.jsx` | Shortcuts (E D L M X F S 0-3 ?), screenshot share. |
 
@@ -182,8 +185,19 @@ Real models are 20–100 m, not the 5 m Kit-of-Parts kit. Never hard-code world 
 | `modelMetrics.js`, `craneLayout.js`, `factoryLayout.js` | Model-scale helpers (see Scale). |
 | `materialMetrics.js` | Default thermal / supply-risk / STC values and colours. |
 | `renderActivity.js` | Which effects need a continuous render loop. |
+| `waterFlow.js` | Runoff engine (three-mesh-bvh): `buildCollisionMesh`, `traceDrop`, `simulateRunoff`, `isDrainPart`. Pure, tested. |
 
 ---
+
+## Rain & water flow
+
+- Rain falls straight down on a grid (≤ 2500 samples) over the visible model; first surface hit = landing.
+- Water runs downhill along the surface (gravity projected on the face). At an edge it drips to the next surface or the ground (y = 0).
+- Stops: pond (slope < 0.5 %, or stuck in a low point), drain (bbox of a drain part), ground.
+- Flow per sample = cell area × rainfall. Results grouped into pools; shares by pond / ground / drain.
+- Part lookup uses the hit triangle's first **vertex** (`vertexPart`): MeshBVH reorders the index buffer.
+- Simulates assembled positions of visible parts. Uses loaded meshes (`getCachedGeometry`), box fallback.
+- Indicative: no infiltration, gutter capacity, or pond overflow.
 
 ## Key decisions
 
@@ -200,6 +214,11 @@ Real models are 20–100 m, not the 5 m Kit-of-Parts kit. Never hard-code world 
 - **Decision:** Crane, camera, factory, ground effects and per-m² metrics scale from the model.
   - **Why:** Fixed 5 m-kit numbers put the camera and crane inside real buildings and divided carbon by 16 m².
   - **Confidence:** high
+- **Decision:** Water flow is a raycast drop tracer on the real meshes (three-mesh-bvh), not a fluid solver.
+  - **Why:** Shows where water lands, flows and collects on any IFC in < 0.2 s. A fluid solver would be slow and need a watertight mesh.
+  - **Alternative:** Heightfield / shallow-water grid. Deferred: loses overhangs and multi-level roofs.
+  - **Revisit when:** pond depth or overflow timing matters.
+  - **Confidence:** med
 - **Decision:** What-if material variants use volume equivalence factors, not re-design.
   - **Why:** Gives instant, comparable what-ifs from IFC data alone.
   - **Alternative:** Structural sizing per material. Deferred: needs loads and spans.
@@ -233,7 +252,7 @@ Build it
 Stress it
 4. Shadow study / 日影規制 (sun by date + location, shadow on neighbours).
 5. "Remove this column" load-path check (indicative, from connections).
-6. Flood level + typhoon wind.
+6. Flood level + typhoon wind (reuse water flow for ground ponding).
 7. Evacuation agents (doors and storeys from IFC).
 
 Decide

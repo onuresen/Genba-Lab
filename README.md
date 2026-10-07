@@ -19,7 +19,8 @@ Load an IFC file. Each element becomes a part you can test.
 - **Tower crane.** Sized and placed from the model. Lift checks per part. Lift path planner. Cab view.
 - **Earthquake.** Shake the model by magnitude.
 - **Fire.** Spread by fire rating. Fire compartments per storey.
-- **Wind and rain.** Pressure arrows, streamlines, rain.
+- **Rain & water flow.** Rain lands on the real surfaces, runs downhill, drips off edges and collects. Shows ponds, drip zones and runoff per mm/h.
+- **Wind.** Pressure arrows, streamlines.
 - **Thermal and acoustic.** Overlays from material and IFC data.
 - **Metrics.** Cost, carbon per m², BOM (CSV), schedule, supply risk.
 - **Material what-if.** Switch a wall or slab to steel or timber. See weight, carbon and cost change.
@@ -64,7 +65,7 @@ More detail for contributors: `CLAUDE.md`.
 
 ## Built with
 
-React · Three.js · React Three Fiber · GSAP · web-ifc · Vite
+React · Three.js · React Three Fiber · three-mesh-bvh · GSAP · web-ifc · Vite
 
 ## Origin
 
