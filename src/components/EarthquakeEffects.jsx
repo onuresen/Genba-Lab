@@ -3,14 +3,6 @@ import { Html, Line } from '@react-three/drei'
 import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
 
-function riskForPart(part, selectedVariants, magnitude, hasShaken) {
-  const variant = part.variants?.[selectedVariants?.[part.id] ?? 0]
-  const grade = variant?.seismic_grade ?? 1
-  if (magnitude > grade * 3) return 'critical'
-  if (magnitude > grade * 2.2) return hasShaken ? 'caution' : 'stress'
-  return 'safe'
-}
-
 function ShockwaveRings({ magnitude, active }) {
   const rings = useRef([])
   useFrame(({ clock }) => {
@@ -71,18 +63,17 @@ function FaultLines({ magnitude, active }) {
 // Text labels only while few parts are at risk; spheres always (Html reprojects every frame).
 const STRESS_LABEL_LIMIT = 30
 
-function StressMarkers({ parts, visible, selectedVariants, magnitude, hasShaken }) {
+function StressMarkers({ parts, visible, risks }) {
   const atRisk = parts
-    .filter(part => visible?.[part.id] !== false)
-    .map(part => ({ part, risk: riskForPart(part, selectedVariants, magnitude, hasShaken) }))
-    .filter(r => r.risk !== 'safe')
+    .filter(part => visible?.[part.id] !== false && risks?.[part.id])
+    .map(part => ({ part, risk: risks[part.id] }))
   const showLabels = atRisk.length <= STRESS_LABEL_LIMIT
   return (
     <group>
       {atRisk.map(({ part, risk }) => {
           const [x, y, z] = part.pos
           const top = y + (part.size?.[1] ?? 1) / 2 + 0.55
-          const color = risk === 'critical' ? '#e74c3c' : '#f39c12'
+          const color = risk.color
           return (
             <group key={part.id} position={[x, top, z]}>
               <mesh>
@@ -91,9 +82,7 @@ function StressMarkers({ parts, visible, selectedVariants, magnitude, hasShaken 
               </mesh>
               {showLabels && (
                 <Html position={[0, 0.28, 0]} center distanceFactor={9} style={{ pointerEvents: 'none' }}>
-                  <div className={`eq-stress-label eq-stress-label--${risk}`}>
-                    {risk === 'critical' ? 'CRITICAL' : 'STRESS'}
-                  </div>
+                  <div className="eq-stress-label" style={{ background: risk.color }}>{risk.label}</div>
                 </Html>
               )}
             </group>
@@ -133,17 +122,19 @@ function CameraRumble({ active, magnitude }) {
 export default function EarthquakeEffects({
   parts,
   visible,
-  selectedVariants,
-  magnitude,
+  pga,
+  risks,
   isShaking,
   hasShaken,
   frame,
 }) {
   if (!parts?.length) return null
+  // Effects were tuned on a magnitude scale: 0.1 g ≈ 5.3, 1 g = 8.
   // Ground effects were sized for a ≈5 m kit: scale and centre them on the model.
   const k = Math.max(1, (frame?.radius ?? 4) / 4.5)
   const [cx, , cz] = frame?.center ?? [0, 0, 0]
-  const showStress = isShaking || hasShaken
+  const magnitude = 4 + 4 * Math.min(1, Math.sqrt(pga ?? 0.4))
+  const showStress = hasShaken
   return (
     <group>
       <CameraRumble active={isShaking} magnitude={magnitude} />
@@ -154,13 +145,7 @@ export default function EarthquakeEffects({
         </group>
       )}
       {showStress && (
-        <StressMarkers
-          parts={parts}
-          visible={visible}
-          selectedVariants={selectedVariants}
-          magnitude={magnitude}
-          hasShaken={hasShaken}
-        />
+        <StressMarkers parts={parts} visible={visible} risks={risks} />
       )}
     </group>
   )

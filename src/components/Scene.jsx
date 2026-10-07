@@ -15,6 +15,7 @@ import ThermalOverlay from './ThermalOverlay'
 import FactoryGrid from './FactoryGrid'
 import FireEffects from './FireEffects'
 import EarthquakeEffects from './EarthquakeEffects'
+import QuakePlayback from './QuakePlayback'
 import { useKit } from './KitContext'
 import RenderDiagnostics from './RenderDiagnostics'
 import { getContinuousRenderReasons } from '../utils/renderActivity'
@@ -148,7 +149,11 @@ export default function Scene({
   onSetShowMetrics,
   maxStep,
   isShaking,
-  earthquakeMagnitude,
+  quakePga,
+  quakeModel,
+  quakeResult,
+  quakeDir,
+  quakeRisks,
   hasShaken,
   highlightedWeek,
   showSecondCrane,
@@ -283,7 +288,7 @@ export default function Scene({
             sectionCutActive={sectionCutActive}
             sectionCutY={sectionCutY}
             isShaking={isShaking}
-            earthquakeMagnitude={earthquakeMagnitude}
+            quakeTint={quakeRisks?.[part.id]?.color}
             highlightedWeek={highlightedWeek}
             showAcoustic={showAcoustic}
             fireMode={fireMode}
@@ -405,12 +410,14 @@ export default function Scene({
         <ThermalOverlay parts={parts} visible={visible} selectedVariants={selectedVariants} />
       )}
 
+      <QuakePlayback active={!factoryMode && isShaking} model={quakeModel} result={quakeResult} dir={quakeDir} />
+
       {!factoryMode && (isShaking || hasShaken) && (
         <EarthquakeEffects
           parts={parts}
           visible={visible}
-          selectedVariants={selectedVariants}
-          magnitude={earthquakeMagnitude ?? 6}
+          pga={quakePga}
+          risks={quakeRisks}
           isShaking={isShaking}
           hasShaken={hasShaken}
           frame={frame}

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import Scene from './components/Scene'
 import InfoPanel from './components/InfoPanel'
 import Sidebar from './components/Sidebar'
@@ -17,6 +17,7 @@ import IfcLoadButton from './components/IfcLoadButton'
 import { computeCraneLayout, partBounds } from './utils/craneLayout'
 import { estimateFloorArea } from './utils/modelMetrics'
 import { windAt } from './utils/windLoad'
+import { buildStoreyModel, simulateQuake, storeyIndexOf } from './utils/seismic'
 import './App.css'
 
 export default function App() {
@@ -106,7 +107,10 @@ export default function App() {
 
   // ── Earthquake ───────────────────────────────────────────
   const [showEarthquake, setShowEarthquake] = useState(false)
-  const [earthquakeMagnitude, setEarthquakeMagnitude] = useState(6.0)
+  const [quakePga, setQuakePga] = useState(0.35)        // peak ground acceleration (g)
+  const [quakeMotion, setQuakeMotion] = useState('near') // 'near' | 'far'
+  const [quakeSystem, setQuakeSystem] = useState('standard')
+  const [quakeDir, setQuakeDir] = useState('x')
   const [isShaking, setIsShaking] = useState(false)
   const [hasShaken, setHasShaken] = useState(false)
   const [earthquakeCountdown, setEarthquakeCountdown] = useState(null)
@@ -251,6 +255,29 @@ export default function App() {
   }, [showCrane])
 
   // ── Earthquake ───────────────────────────────────────────
+  // Storey model + response are computed up front; the playback only replays them.
+  const quakeModel = useMemo(
+    () => (showEarthquake ? buildStoreyModel(parts, selectedVariants, visible) : null),
+    [showEarthquake, parts, selectedVariants, visible],
+  )
+  const quakeResult = useMemo(
+    () => (quakeModel ? simulateQuake(quakeModel, { pga: quakePga, system: quakeSystem, type: quakeMotion }) : null),
+    [quakeModel, quakePga, quakeSystem, quakeMotion],
+  )
+  // New inputs: the old verdict no longer applies.
+  useEffect(() => { setHasShaken(false) }, [quakeResult, quakeDir])
+  // Damaged storeys tint their parts after the shake.
+  const quakeRisks = useMemo(() => {
+    if (!hasShaken || !quakeModel || !quakeResult) return null
+    const out = {}
+    for (const p of parts) {
+      if (!visible[p.id]) continue
+      const lv = quakeResult.storeys[storeyIndexOf(p, quakeModel)]?.level
+      if (lv && lv.key !== 'ok') out[p.id] = lv
+    }
+    return out
+  }, [hasShaken, quakeModel, quakeResult, parts, visible])
+
   function handleShake() {
     if (isShaking || earthquakeCountdown != null) return
     setHasShaken(false)
@@ -262,7 +289,7 @@ export default function App() {
         clearInterval(countdownId)
         setEarthquakeCountdown(null)
         setIsShaking(true)
-        const duration = (earthquakeMagnitude * 0.35 + 1) * 1000
+        const duration = (quakeResult?.duration ?? 10) * 1000 + 300
         setTimeout(() => {
           setIsShaking(false)
           setHasShaken(true)
@@ -554,7 +581,11 @@ export default function App() {
         showCraneRadius={showCraneRadius}
         currentPartWeight={currentPartWeight}
         isShaking={isShaking}
-        earthquakeMagnitude={earthquakeMagnitude}
+        quakePga={quakePga}
+        quakeModel={quakeModel}
+        quakeResult={quakeResult}
+        quakeDir={quakeDir}
+        quakeRisks={quakeRisks}
         hasShaken={hasShaken}
         highlightedWeek={highlightedWeek}
         showSecondCrane={showSecondCrane}
@@ -666,14 +697,21 @@ export default function App() {
 
         {showEarthquake && (
           <EarthquakePanel
-            magnitude={earthquakeMagnitude}
-            onMagnitude={setEarthquakeMagnitude}
-            isShaking={isShaking}
-            countdown={earthquakeCountdown}
-            onShake={handleShake}
-            hasShaken={hasShaken}
-            selectedVariants={selectedVariants}
-          />
+              pga={quakePga}
+              onPga={setQuakePga}
+              motion={quakeMotion}
+              onMotion={setQuakeMotion}
+              system={quakeSystem}
+              onSystem={setQuakeSystem}
+              dir={quakeDir}
+              onDir={setQuakeDir}
+              model={quakeModel}
+              result={quakeResult}
+              isShaking={isShaking}
+              countdown={earthquakeCountdown}
+              onShake={handleShake}
+              hasShaken={hasShaken}
+            />
         )}
 
         {showWindArrows && (
