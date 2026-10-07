@@ -1,14 +1,14 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { exportKitToIfcText, openWebIfc } from './ifcTestHelpers.mjs'
+import { loadFixture, openWebIfc } from './ifcTestHelpers.mjs'
 import { parseIfc } from '../src/utils/ifcParse.js'
 import { ifcToKit, MAX_INDIVIDUAL_PARTS } from '../src/utils/ifcToKit.js'
 
-const { kit: source, ifcText } = exportKitToIfcText('./fixtures/basic-kit.json')
+const { kit: source, ifcText } = loadFixture('basic-kit')
 const { api, WebIFC } = await openWebIfc()
 const parsed = parseIfc(api, WebIFC, new TextEncoder().encode(ifcText))
 
-test('parser reads every exported element with geometry', () => {
+test('parser reads every fixture element with geometry', () => {
   assert.equal(parsed.elements.length, source.parts.length)
   assert.equal(parsed.schema, 'IFC2X3')
   for (const el of parsed.elements) {
@@ -58,7 +58,7 @@ test('large models group by storey and class', () => {
 
 import { parseFireRating, fireGrade, parseAcousticRating, materialProfile } from '../src/utils/ifcProperties.js'
 
-test('parser reads property sets written by the exporter', () => {
+test('parser reads the fixture property sets', () => {
   const byName = new Map(source.parts.map(p => [p.id, p]))
   for (const el of parsed.elements) {
     const part = byName.get(el.name)
@@ -113,7 +113,16 @@ test('IFC facts drive part values', () => {
   assert.equal(v.carbon_kgco2e, Math.round(1234 * 1.55))
   assert.equal(v.ifc_psets.Pset_SlabCommon.FireRating, 'REI 120')
   assert.match(v.meta, /From IFC: material, fire rating, load bearing, acoustic rating, volume, weight/)
-  assert.match(v.meta, /Estimated: cost, carbon\./)
+  assert.match(v.meta, /Estimated: cost, carbon, seismic grade\./)
+  assert.equal(v.seismic_grade, 2) // structural (secondary) → estimated grade 2
+
+  // What-if variants: a steel slab gets concrete and timber alternatives.
+  const alts = part.variants.slice(1)
+  assert.deepEqual(alts.map(a => a.label).sort(), ['Concrete (what-if)', 'Timber (what-if)'])
+  const timber = alts.find(a => a.label.startsWith('Timber'))
+  assert.equal(timber.fire_resistance_grade, '1hr') // timber caps a 2hr rating at 1hr
+  assert.equal(timber.what_if, true)
+  assert.ok(timber.carbon_kgco2e > 0 && timber.weight_kg > 0)
 })
 
 test('grouped parts keep the weakest fire rating and drop full property sets', () => {
@@ -127,4 +136,25 @@ test('grouped parts keep the weakest fire rating and drop full property sets', (
   const slabPart = kit.parts.find(x => x.variants[0].ifc_entity === 'IfcSlab')
   assert.equal(slabPart.variants[0].fire_resistance_grade, '1hr')
   assert.equal(slabPart.variants[0].ifc_psets, undefined)
+})
+
+test('seismic grade is read from IFC when present', () => {
+  const p = structuredClone(parsed)
+  const el = p.elements[0]
+  el.psets = { Pset_Custom: { SeismicGrade: 3 } }
+  const { kit } = ifcToKit(p, { fileName: 'seismic.ifc' })
+  const part = kit.parts.find(x => x.variants[0].ifc_property_set.ExpressID === el.expressID)
+  assert.equal(part.variants[0].seismic_grade, 3)
+  assert.match(part.variants[0].meta, /From IFC: .*seismic grade/)
+})
+
+test('non-structural classes get no what-if variants', () => {
+  const p = structuredClone(parsed)
+  const el = p.elements[0]
+  el.ifcType = 'IfcFurnishingElement'
+  el.psets = {} // no LoadBearing flag → class default (non-structural)
+  const { kit } = ifcToKit(p, { fileName: 'furn.ifc' })
+  const part = kit.parts.find(x => x.variants[0].ifc_property_set.ExpressID === el.expressID)
+  assert.equal(part.variants.length, 1)
+  assert.equal(part.variants[0].seismic_grade, 1)
 })

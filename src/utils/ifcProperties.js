@@ -121,3 +121,68 @@ export function combineFacts(members) {
     facts,
   }
 }
+
+export function materialByLabel(label) {
+  const row = MATERIALS.find(r => r[1] === label)
+  if (!row) return null
+  const [, name, density, carbon, cost, lambda] = row
+  return { name, label: name, density, carbon, cost, lambda }
+}
+
+/**
+ * Seismic grade (耐震等級 1–3). Read from IFC when a property says so;
+ * otherwise estimated from the structural role (indicative only).
+ */
+export function estimateSeismicGrade(role, psets) {
+  for (const key of ['SeismicGrade', 'SeismicGrade_JP', '耐震等級']) {
+    const v = Number(findProp(psets, key))
+    if (v >= 1 && v <= 3) return { grade: Math.round(v), fromIfc: true }
+  }
+  return { grade: role === 'primary' || role === 'secondary' ? 2 : 1, fromIfc: false }
+}
+
+// What-if structural materials. `equiv` = volume needed vs concrete for a similar
+// structural job (steel sections are slim, mass timber is thicker). Indicative only.
+const WHAT_IF = {
+  Concrete: { color: '#b8bec4', equiv: 1, lead: 21 },
+  Steel:    { color: '#7f8c99', equiv: 0.06, lead: 35 },
+  Timber:   { color: '#c8a165', equiv: 1.4, lead: 45 },
+}
+export const SWAPPABLE_CLASSES = new Set(['IfcSlab', 'IfcWall', 'IfcColumn', 'IfcBeam', 'IfcRoof', 'IfcMember'])
+
+/**
+ * Extra variants for a structural part: the same element in the other
+ * structural materials. Geometry stays the same; only the numbers change.
+ */
+export function whatIfVariants(base, { volume, baseMaterial, ifcType }) {
+  if (!SWAPPABLE_CLASSES.has(ifcType) || !(volume > 0)) return []
+  const from = WHAT_IF[baseMaterial] ? baseMaterial : 'Concrete'
+  return Object.entries(WHAT_IF)
+    .filter(([name]) => name !== from)
+    .map(([name, info]) => {
+      const m = materialByLabel(name)
+      const factor = info.equiv / WHAT_IF[from].equiv
+      const v2 = volume * factor
+      const weight = Math.round(v2 * m.density)
+      const fire = name === 'Timber' && base.fire_resistance_grade === '2hr' ? '1hr' : base.fire_resistance_grade
+      return {
+        label: `${name} (what-if)`,
+        color: info.color,
+        meta: `What-if: ${baseMaterial || 'original'} → ${name}. Same element, volume ×${factor.toFixed(2)} (indicative). All values estimated.`,
+        weight_kg: weight,
+        unit_cost_usd: Math.round(v2 * m.cost),
+        labor_cost_usd: Math.round(v2 * m.cost * 0.3),
+        carbon_kgco2e: Math.round(weight * m.carbon),
+        lead_time_days: info.lead,
+        assembly_time_min: base.assembly_time_min,
+        seismic_grade: base.seismic_grade,
+        fire_resistance_grade: fire,
+        load_bearing_kn: null,
+        bsl_compliant: null,
+        thermal_conductivity_wpmk: m.lambda,
+        ifc_entity: base.ifc_entity,
+        ifc_property_set: base.ifc_property_set,
+        what_if: true,
+      }
+    })
+}

@@ -1,6 +1,6 @@
 import {
   MousePointer2, Scissors,
-  Ruler, BarChart3, Undo2, Redo2, Layers, Zap,
+  Ruler, Link2, BarChart3, Undo2, Redo2, Layers, Zap,
   Moon, Sun, Keyboard, HardHat, Clapperboard, Camera, Activity, Wind, LayoutTemplate,
   Droplets, Menu, X, Flame, Shield, Thermometer, Volume2, Factory
 } from 'lucide-react'
@@ -10,6 +10,7 @@ export default function Toolbar({
   exploded, onToggleExplode,
   sectionCutActive, onToggleSectionCut,
   showDimensions, onToggleDimensions,
+  showConnections, onToggleConnections,
   showMetrics, onToggleMetrics,
   factoryMode, onToggleFactoryMode,
   sequenceMode, onToggleSequence,
@@ -75,6 +76,14 @@ export default function Toolbar({
           disabled={factoryMode}
         >
           <Ruler size={15} />
+        </button>
+        <button
+          className={`tb-btn ${showConnections ? 'tb-btn--active' : ''}`}
+          title="Connection lines (L)"
+          onClick={onToggleConnections}
+          disabled={factoryMode}
+        >
+          <Link2 size={15} />
         </button>
         <button
           className={`tb-btn ${showMetrics ? 'tb-btn--active' : ''}`}

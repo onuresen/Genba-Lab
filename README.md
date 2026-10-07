@@ -21,11 +21,13 @@ Load an IFC file. Each element becomes a part you can test.
 - **Fire.** Spread by fire rating. Fire compartments per storey.
 - **Wind and rain.** Pressure arrows, streamlines, rain.
 - **Thermal and acoustic.** Overlays from material and IFC data.
-- **Metrics.** Cost, carbon, BOM, schedule, supply risk.
+- **Metrics.** Cost, carbon per m², BOM (CSV), schedule, supply risk.
+- **Material what-if.** Switch a wall or slab to steel or timber. See weight, carbon and cost change.
 - **Factory layout.** Lay parts out by production bay.
 - **Floor plan, section cut, explode view.**
 
 Click a part to see its IFC data and all property sets.
+Press `?` for keyboard shortcuts.
 
 ## Your data
 
@@ -35,7 +37,8 @@ Click a part to see its IFC data and all property sets.
 ## Read before trusting numbers
 
 - Material, fire rating, load bearing and quantities come from IFC when present.
-- Cost and carbon are always estimates (volume × material factors).
+- Cost, carbon and seismic grade are estimates unless the IFC says otherwise.
+- What-if materials use rough volume factors. They are for comparing, not design.
 - Simulations are visual and indicative. They are not engineering checks.
 - Each part says what came from IFC and what is estimated.
 

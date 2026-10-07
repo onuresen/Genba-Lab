@@ -1,6 +1,7 @@
 const SHORTCUTS = [
   { key: 'E', desc: 'Explode / Assemble' },
   { key: 'D', desc: 'Toggle dimension lines' },
+  { key: 'L', desc: 'Toggle connection lines' },
   { key: 'M', desc: 'Open / close Metrics panel' },
   { key: 'X', desc: 'Toggle section cut' },
   { key: 'F', desc: 'Toggle Factory layout' },

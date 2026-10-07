@@ -6,7 +6,7 @@
 // come from IFC property sets when present. Cost and carbon are always estimates
 // (volume × material factors). Each variant's `meta` says which is which.
 
-import { combineFacts, fireGrade, materialProfile } from './ifcProperties.js'
+import { combineFacts, estimateSeismicGrade, fireGrade, materialProfile, whatIfVariants } from './ifcProperties.js'
 
 // Above this many elements, parts are grouped per storey + IFC class.
 export const MAX_INDIVIDUAL_PARTS = 120
@@ -236,7 +236,9 @@ export function ifcToKit(parsed, { fileName = 'model.ifc', modelKey = 'ifc' } = 
       qVolumeCount === members.length && 'volume',
       weightFromIfc && 'weight',
     ].filter(Boolean)
-    const estimated = ['cost', 'carbon', !weightFromIfc && 'weight', qVolumeCount < members.length && 'volume'].filter(Boolean)
+    const seismic = estimateSeismicGrade(role, first.psets)
+    if (seismic.fromIfc) fromIfc.push('seismic grade')
+    const estimated = ['cost', 'carbon', !weightFromIfc && 'weight', qVolumeCount < members.length && 'volume', !seismic.fromIfc && 'seismic grade'].filter(Boolean)
     const meta = `${countText}Imported from ${fileName}. `
       + (fromIfc.length ? `From IFC: ${fromIfc.join(', ')}. ` : 'No IFC properties found. ')
       + `Estimated: ${estimated.join(', ')}.`
@@ -273,6 +275,7 @@ export function ifcToKit(parsed, { fileName = 'model.ifc', modelKey = 'ifc' } = 
       _bounds: { min: min.map((v, k) => v - shift[k]), max: max.map((v, k) => v - shift[k]) },
       variants: [{
         label: facts.material ? facts.material.slice(0, 40) : `${shortName(ifcType)} (from IFC)`,
+        material_class: mat?.label ?? null,
         color,
         meta,
         weight_kg: weight,
@@ -281,7 +284,7 @@ export function ifcToKit(parsed, { fileName = 'model.ifc', modelKey = 'ifc' } = 
         carbon_kgco2e: Math.round(weight * carbonPerKg),
         lead_time_days: 21,
         assembly_time_min: Math.max(15, Math.round(volume * 20)),
-        seismic_grade: null,
+        seismic_grade: seismic.grade,
         fire_resistance_grade: fireGrade(facts.fireMinutes),
         load_bearing_kn: null,
         bsl_compliant: null,
@@ -293,6 +296,8 @@ export function ifcToKit(parsed, { fileName = 'model.ifc', modelKey = 'ifc' } = 
         ...(grouped ? {} : { ifc_psets: first.psets ?? {} }),
       }],
     })
+    const part = parts[parts.length - 1]
+    part.variants.push(...whatIfVariants(part.variants[0], { volume, baseMaterial: mat?.label, ifcType }))
   }
 
   // ── Sequence: storey → build order → height ──

@@ -1,49 +1,48 @@
 import { useState } from 'react'
+import * as THREE from 'three'
 import { Edges, Grid, Html } from '@react-three/drei'
 import { useKit } from './KitContext'
+import { useIfcGeometry } from '../utils/ifcGeometryStore'
+import { BAY_SIZE, BAY_SPACING_X, BAY_SPACING_Z, factoryLayout } from '../utils/factoryLayout'
 
-const BAY_SPACING_X = 4.6
-const BAY_SPACING_Z = 4.2
-const BAY_COLS = 3
-const BAY_SIZE = [3.8, 3.4]
 const WEIGHT_LIMIT_KG = 3000
 const LEAD_LIMIT_DAYS = 45
+// Typical road-transport limit in Japan (width × height × length, m). Indicative.
+const TRANSPORT_LIMIT = [2.5, 3.8, 12]
+// Above this many bays, per-bay labels only show on hover (each <Html> costs a reprojection per frame).
+const LABEL_LIMIT = 30
 
-function bayPosition(index) {
-  const col = index % BAY_COLS
-  const row = Math.floor(index / BAY_COLS)
+function bayPosition(index, cols) {
+  const col = index % cols
+  const row = Math.floor(index / cols)
   return [
-    (col - (BAY_COLS - 1) / 2) * BAY_SPACING_X,
+    (col - (cols - 1) / 2) * BAY_SPACING_X,
     0,
     row * BAY_SPACING_Z - 2.2,
   ]
-}
-
-function PartGeometry({ part }) {
-  if (part.shape === 'cylinder') {
-    return <cylinderGeometry args={part.cylinderArgs || [part.size[0] / 2, part.size[0] / 2, part.size[1], 32]} />
-  }
-  return <boxGeometry args={part.size} />
 }
 
 function getBayWarnings(part, variant) {
   const warnings = []
   const weight = Number(variant?.weight_kg ?? 0)
   const lead = Number(variant?.lead_time_days ?? 0)
-  const footprintX = part.shape === 'cylinder' ? part.size[0] : part.size[0]
-  const footprintZ = part.shape === 'cylinder' ? part.size[0] : part.size[2]
+  // Smallest two sides vs width/height, longest side vs length.
+  const [a, b, c] = [...part.size].sort((x, y) => x - y)
+  const [lw, lh, ll] = TRANSPORT_LIMIT
+  const oversize = a > lw || b > lh || c > ll
 
   if (weight > WEIGHT_LIMIT_KG) warnings.push({ key: 'weight', label: `${Math.round(weight).toLocaleString()} kg`, severity: weight > WEIGHT_LIMIT_KG * 1.5 ? 'high' : 'medium' })
-  if (footprintX > BAY_SIZE[0] || footprintZ > BAY_SIZE[1]) warnings.push({ key: 'size', label: `${footprintX.toFixed(1)}×${footprintZ.toFixed(1)}m`, severity: 'medium' })
+  if (oversize) warnings.push({ key: 'size', label: `${c.toFixed(1)}×${b.toFixed(1)}×${a.toFixed(1)}m over transport`, severity: 'medium' })
   if (lead > LEAD_LIMIT_DAYS) warnings.push({ key: 'lead', label: `${lead}d lead`, severity: lead > LEAD_LIMIT_DAYS + 20 ? 'high' : 'medium' })
   return warnings
 }
 
-function FactoryPart({ part, variant, index, draggedPartId, dropPartId, onDragStart, onDrop }) {
-  const [x, y, z] = bayPosition(index)
+function FactoryPart({ part, variant, index, cols, compact, draggedPartId, dropPartId, onDragStart, onDrop }) {
+  const [hovered, setHovered] = useState(false)
+  const ifcGeometry = useIfcGeometry(part.shape === 'ifc' ? part.ifcGeometry : null)
+  const showDetails = !compact || hovered || draggedPartId === part.id
+  const [x, y, z] = bayPosition(index, cols)
   const scale = Math.min(1, 2.6 / Math.max(part.size[0], part.size[1], part.size[2]))
-  const isWire = part.wire ?? false
-  const isTrans = part.transparent ?? false
   const bayLabel = `Bay ${String(index + 1).padStart(2, '0')}`
   const warnings = getBayWarnings(part, variant)
   const hasHighWarning = warnings.some(w => w.severity === 'high')
@@ -68,9 +67,11 @@ function FactoryPart({ part, variant, index, draggedPartId, dropPartId, onDragSt
         }}
         onPointerOver={(e) => {
           e.stopPropagation()
+          setHovered(true)
           if (draggedPartId && draggedPartId !== part.id) document.body.style.cursor = 'copy'
         }}
         onPointerOut={() => {
+          setHovered(false)
           if (draggedPartId) document.body.style.cursor = 'grabbing'
         }}
         onPointerUp={(e) => {
@@ -86,37 +87,37 @@ function FactoryPart({ part, variant, index, draggedPartId, dropPartId, onDragSt
 
       <group position={[0, 0.42, 0]} rotation={[-Math.PI / 2, 0, 0]} scale={[scale, scale, scale]}>
         <mesh castShadow receiveShadow>
-          <PartGeometry part={part} />
+          {ifcGeometry
+            ? <primitive object={ifcGeometry} attach="geometry" dispose={null} />
+            : <boxGeometry args={part.size} />}
           <meshStandardMaterial
             color={variant?.color ?? '#95a5a6'}
-            transparent={isTrans || isWire}
-            opacity={isWire ? 0.12 : isTrans ? 0.58 : 1}
-            depthWrite={!isWire}
             roughness={0.72}
+            side={ifcGeometry ? THREE.DoubleSide : THREE.FrontSide}
           />
-          <Edges color={isWire ? variant?.color ?? '#95a5a6' : '#26323d'} threshold={15} />
+          <Edges color="#26323d" threshold={ifcGeometry ? 30 : 15} />
         </mesh>
       </group>
 
-      <Html position={[0, 1.05, -1.45]} center distanceFactor={9} style={{ pointerEvents: 'none' }}>
+      {showDetails && <Html position={[0, 1.05, -1.45]} center distanceFactor={9} style={{ pointerEvents: 'none' }}>
         <div className={`factory-bay-label ${warnings.length ? 'factory-bay-label--warning' : ''}`}>
           <span>{bayLabel}</span>
           Seq {part.sequence ?? index + 1}
         </div>
-      </Html>
-      {warnings.length > 0 && (
+      </Html>}
+      {showDetails && warnings.length > 0 && (
         <Html position={[0, 0.92, 1.28]} center distanceFactor={9} style={{ pointerEvents: 'none' }}>
           <div className={`factory-warning-stack ${hasHighWarning ? 'factory-warning-stack--high' : ''}`}>
             {warnings.map(w => <span key={w.key}>{w.label}</span>)}
           </div>
         </Html>
       )}
-      <Html position={[0, 0.12, 1.58]} center distanceFactor={9} style={{ pointerEvents: 'none' }}>
+      {showDetails && <Html position={[0, 0.12, 1.58]} center distanceFactor={9} style={{ pointerEvents: 'none' }}>
         <div className={`factory-part-label ${draggedPartId === part.id ? 'factory-part-label--dragging' : ''}`}>
           <strong>{part.id}</strong>
           <span>{draggedPartId === part.id ? 'Drag to another bay' : part.factory_work ? 'Factory fabrication' : 'Site-prep item'}</span>
         </div>
-      </Html>
+      </Html>}
     </group>
   )
 }
@@ -130,9 +131,8 @@ export default function FactoryGrid({ parts, visible, selectedVariants }) {
     .slice()
     .sort((a, b) => (a.sequence ?? 99) - (b.sequence ?? 99))
 
-  const rows = Math.max(1, Math.ceil(factoryParts.length / BAY_COLS))
-  const width = BAY_COLS * BAY_SPACING_X + 1.6
-  const depth = rows * BAY_SPACING_Z + 1.8
+  const { cols, width, depth, centerZ } = factoryLayout(factoryParts.length)
+  const compact = factoryParts.length > LABEL_LIMIT
 
   function handleDragStart(partId) {
     setDraggedPartId(partId)
@@ -165,7 +165,7 @@ export default function FactoryGrid({ parts, visible, selectedVariants }) {
   return (
     <group>
       <Grid
-        position={[0, -0.03, (rows - 1) * BAY_SPACING_Z / 2 - 2.2]}
+        position={[0, -0.03, centerZ]}
         args={[width, depth]}
         cellSize={1}
         cellThickness={0.6}
@@ -182,7 +182,7 @@ export default function FactoryGrid({ parts, visible, selectedVariants }) {
       <Html position={[0, 1.25, -4.4]} center distanceFactor={11} style={{ pointerEvents: 'none' }}>
         <div className="factory-title-label">
           <span>Prefab Factory Layout</span>
-          {draggedPartId ? 'Drop on another bay to resequence' : `${factoryParts.length} visible parts · drag bays to reorder`}
+          {draggedPartId ? 'Drop on another bay to resequence' : `${factoryParts.length} visible parts · drag bays to reorder${compact ? ' · hover a bay for details' : ''}`}
         </div>
       </Html>
 
@@ -192,6 +192,8 @@ export default function FactoryGrid({ parts, visible, selectedVariants }) {
           part={part}
           variant={part.variants[selectedVariants[part.id] ?? 0]}
           index={index}
+          cols={cols}
+          compact={compact}
           draggedPartId={draggedPartId}
           dropPartId={dropPartId}
           onDragStart={handleDragStart}

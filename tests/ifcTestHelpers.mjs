@@ -1,21 +1,13 @@
-// Node helpers: capture the exporter's IFC text and open web-ifc headless.
+// Node helpers: load the fixture kit + its IFC file and open web-ifc headless.
+// tests/fixtures/basic-kit.ifc was written once from basic-kit.json by the old
+// Kit-of-Parts box exporter (removed from the app), so the two describe the same parts.
 import { readFileSync } from 'node:fs'
 import * as WebIFC from 'web-ifc'
-import { exportIFC } from '../src/utils/ifcExporter.js'
 
-export function exportKitToIfcText(kitPath) {
-  const kit = JSON.parse(readFileSync(new URL(kitPath, import.meta.url), 'utf8'))
-  let captured = ''
-  const saved = { Blob: globalThis.Blob, URL: globalThis.URL, document: globalThis.document }
-  globalThis.Blob = class { constructor(parts) { captured = parts.join('') } }
-  globalThis.URL = { createObjectURL: () => 'blob:x', revokeObjectURL: () => {} }
-  globalThis.document = { createElement: () => ({ click() {} }) }
-  try {
-    exportIFC(kit.parts, Object.fromEntries(kit.parts.map(p => [p.id, 0])))
-  } finally {
-    Object.assign(globalThis, saved)
-  }
-  return { kit, ifcText: captured }
+export function loadFixture(name = 'basic-kit') {
+  const kit = JSON.parse(readFileSync(new URL(`./fixtures/${name}.json`, import.meta.url), 'utf8'))
+  const ifcText = readFileSync(new URL(`./fixtures/${name}.ifc`, import.meta.url), 'utf8')
+  return { kit, ifcText }
 }
 
 export async function openWebIfc() {
