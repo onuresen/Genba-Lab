@@ -21,6 +21,8 @@ import { useKit } from './KitContext'
 import RenderDiagnostics from './RenderDiagnostics'
 import { getContinuousRenderReasons } from '../utils/renderActivity'
 import { computeCraneLayout } from '../utils/craneLayout'
+import { cameraViews, modelFrame } from '../utils/modelMetrics'
+import { factoryLayout } from '../utils/factoryLayout'
 
 // ── GSAP → R3F invalidation bridge ─────────────────────────
 // In `frameloop="demand"` mode R3F only renders when a React prop changes or
@@ -46,21 +48,28 @@ function GsapBridge() {
   return null
 }
 
-function CameraController({ factoryMode, controlsRef, cameraCmd, craneCabView, craneLayout }) {
+function factoryView(layout) {
+  const span = Math.max(layout.width, layout.depth)
+  return { pos: [0, Math.max(12, span * 1.05), layout.centerZ + Math.max(9, span * 0.75)], target: [0, 0, layout.centerZ] }
+}
+
+function CameraController({ factoryMode, controlsRef, cameraCmd, craneCabView, craneLayout, frame, factory }) {
   const { camera } = useThree()
 
-  useEffect(() => {
-    const pos = factoryMode ? { x: 0, y: 12, z: 9 } : { x: 8, y: 8, z: 8 }
-    gsap.to(camera.position, { ...pos, duration: 1.2, ease: 'expo.inOut' })
+  function flyTo({ pos, target }, duration = 1.2) {
+    gsap.to(camera.position, { x: pos[0], y: pos[1], z: pos[2], duration, ease: 'expo.inOut' })
     if (controlsRef.current) {
-      const targetY = 0
-      const targetZ = factoryMode ? 1.2 : 0
       gsap.to(controlsRef.current.target, {
-        x: 0, y: targetY, z: targetZ,
-        duration: 1.2, ease: 'expo.inOut',
+        x: target[0], y: target[1], z: target[2],
+        duration, ease: 'expo.inOut',
         onUpdate: () => controlsRef.current?.update(),
       })
     }
+  }
+
+  useEffect(() => {
+    flyTo(factoryMode ? factoryView(factory) : cameraViews(frame).home)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [factoryMode, camera, controlsRef])
 
   // ── Crane Cab View ───────────────────────────────────────
@@ -78,12 +87,7 @@ function CameraController({ factoryMode, controlsRef, cameraCmd, craneCabView, c
       })
     } else {
       controlsRef.current.enabled = true
-      gsap.to(camera.position, { x: 8, y: 8, z: 8, duration: 1.2, ease: 'expo.inOut' })
-      gsap.to(controlsRef.current.target, {
-        x: 0, y: 0, z: 0,
-        duration: 1.2, ease: 'expo.inOut',
-        onUpdate: () => controlsRef.current?.update(),
-      })
+      flyTo(cameraViews(frame).home)
     }
   }, [craneCabView])
 
@@ -94,16 +98,7 @@ function CameraController({ factoryMode, controlsRef, cameraCmd, craneCabView, c
     let pos, target
 
     if (cameraCmd.type === 'preset') {
-      const presets = {
-        front:  { pos: [0, 2, 14],   target: [0, 1.5, 0] },
-        back:   { pos: [0, 2, -14],  target: [0, 1.5, 0] },
-        top:    { pos: [0.001, 16, 0], target: [0, 0, 0] },
-        bottom: { pos: [0.001, -14, 0], target: [0, 0, 0] },
-        right:  { pos: [14, 2, 0],   target: [0, 1.5, 0] },
-        left:   { pos: [-14, 2, 0],  target: [0, 1.5, 0] },
-        home:   { pos: [8, 8, 8],    target: [0, 0, 0] },
-      }
-      const p = presets[cameraCmd.preset]
+      const p = cameraViews(frame)[cameraCmd.preset]
       if (!p) return
       pos = p.pos; target = p.target
     } else if (cameraCmd.type === 'frame') {
@@ -136,6 +131,7 @@ export default function Scene({
   sequenceMode,
   sequenceStep,
   showDimensions,
+  showConnections,
   sectionCutActive,
   sectionCutY,
   factoryMode,
@@ -178,6 +174,10 @@ export default function Scene({
   const controlsRef = useRef()
   const { parts } = useKit()
   const craneLayout = useMemo(() => computeCraneLayout(parts), [parts])
+  const frame = useMemo(() => modelFrame(parts), [parts])
+  // Ken grid (910 mm module) and ground shadow cover the model footprint.
+  const footprint = Math.max(frame.size[0], frame.size[2])
+  const kenModules = Math.min(400, Math.max(20, Math.ceil((footprint + 2) / 0.91)))
   // Ground must hold the model and the crane's reach.
   const groundSize = Math.max(100, Math.ceil((Math.abs(craneLayout.x) + craneLayout.jibLen) * 3))
 
@@ -221,7 +221,7 @@ export default function Scene({
       <OrbitControls ref={controlsRef} makeDefault enableDamping />
       <GsapBridge />
       {diagnosticsEnabled && <RenderDiagnostics continuousReasons={continuousReasons} />}
-      <CameraController factoryMode={factoryMode} controlsRef={controlsRef} cameraCmd={cameraCmd} craneCabView={craneCabView} craneLayout={craneLayout} />
+      <CameraController factoryMode={factoryMode} controlsRef={controlsRef} cameraCmd={cameraCmd} craneCabView={craneCabView} craneLayout={craneLayout} frame={frame} factory={factoryLayout(visibleCount)} />
 
       <ambientLight intensity={!factoryMode && envSettings && (envSettings.time < 6 || envSettings.time > 18) ? 0.2 : 0.8} />
       
@@ -292,7 +292,7 @@ export default function Scene({
       })}
 
       {/* ── Connection indicators (deduplicated) ────────── */}
-      {!factoryMode && parts && (() => {
+      {!factoryMode && showConnections && parts && (() => {
         const rendered = new Set()
         return parts.flatMap(partA =>
           (partA.connections ?? []).flatMap(conn => {
@@ -318,7 +318,7 @@ export default function Scene({
 
       {/* Ken Grid — 910mm modular grid (Japan standard) */}
       {!factoryMode && envSettings?.kenGrid && (
-        <gridHelper args={[18.2, 20, '#8b7355', '#c4b49a']} position={[0, -0.265, 0]} />
+        <gridHelper args={[kenModules * 0.91, kenModules, '#8b7355', '#c4b49a']} position={[frame.center[0], -0.265, frame.center[2]]} />
       )}
 
       {/* Invisible click plane when grass is off */}
@@ -416,6 +416,7 @@ export default function Scene({
           magnitude={earthquakeMagnitude ?? 6}
           isShaking={isShaking}
           hasShaken={hasShaken}
+          frame={frame}
         />
       )}
 
@@ -428,9 +429,9 @@ export default function Scene({
       )}
 
       <ContactShadows
-        position={[0, -0.26, 0]}
+        position={[frame.center[0], -0.26, frame.center[2]]}
         opacity={0.28}
-        scale={40}
+        scale={Math.max(40, footprint * 2)}
         blur={1.5}
         resolution={512}
         frames={1}
@@ -445,6 +446,7 @@ export default function Scene({
         onSetSequenceStep={onSetSequenceStep}
         onSetShowMetrics={onSetShowMetrics}
         maxStep={maxStep}
+        frame={frame}
       />
     </Canvas>
   )

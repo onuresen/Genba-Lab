@@ -1,15 +1,12 @@
 import { useState } from 'react'
 import { useKit } from './KitContext'
-import { generatePDF } from '../utils/pdfGenerator'
-import { exportIFC } from '../utils/ifcExporter'
 import AIOptimiserPanel from './AIOptimiserPanel'
 import GanttPanel from './GanttPanel'
 import SupplyRiskPanel from './SupplyRiskPanel'
 import { getSupplyRiskMeta } from '../utils/materialMetrics'
+import { estimateFloorArea } from '../utils/modelMetrics'
 
-const FOOTPRINT_M2 = 16
 const RIBA_BUDGET = 300
-const RIBA_BUDGET_TOTAL = RIBA_BUDGET * FOOTPRINT_M2
 
 // CASBEE embodied carbon benchmarks (kg CO₂e/m²) for residential
 const CASBEE_BENCHMARKS = {
@@ -39,14 +36,18 @@ export default function MetricsPanel({ selectedVariants, visible, onClose, onVar
     return part.variants[idx]
   }
 
+  // Per-m² metrics use the model's estimated floor area (all parts, not just visible).
+  const FLOOR_M2 = estimateFloorArea(parts)
+  const RIBA_BUDGET_TOTAL = RIBA_BUDGET * FLOOR_M2
+
   const activeParts = parts.filter(p => visible[p.id])
   const totalWeight   = activeParts.reduce((sum, p) => sum + getVariant(p).weight_kg, 0)
   const totalMaterial = activeParts.reduce((sum, p) => sum + getVariant(p).unit_cost_usd, 0)
   const totalLabour   = activeParts.reduce((sum, p) => sum + (getVariant(p).labor_cost_usd ?? 0), 0)
   const totalCost     = totalMaterial + totalLabour
-  const costPerM2     = Math.round(totalCost / FOOTPRINT_M2)
+  const costPerM2     = Math.round(totalCost / FLOOR_M2)
   const totalCarbon   = activeParts.reduce((sum, p) => sum + getVariant(p).carbon_kgco2e, 0)
-  const carbonPerM2   = Math.round(totalCarbon / FOOTPRINT_M2)
+  const carbonPerM2   = Math.round(totalCarbon / FLOOR_M2)
 
   // RIBA 2030
   const budgetPct     = Math.round((carbonPerM2 / RIBA_BUDGET) * 100)
@@ -73,13 +74,17 @@ export default function MetricsPanel({ selectedVariants, visible, onClose, onVar
     return min === null ? g : Math.min(min, g)
   }, null)
   const bslCompliantCount = parts.filter(p => getVariant(p).bsl_compliant).length
+  // IFC rarely carries these Japanese fields; hide their UI when nobody has them.
+  const hasBsl = parts.some(p => getVariant(p).bsl_compliant != null)
+  const hasJis = parts.some(p => getVariant(p).jis_standards?.length > 0)
+  const hasKn  = parts.some(p => getVariant(p).load_bearing_kn != null)
 
   function exportCSV() {
     const headers = [
       'Component', 'Factory/Site', 'Variant', 'SKU', 'Supplier',
       'Visible', 'Weight (kg)', 'Material Cost (USD)', 'Labour Cost (USD)',
       'Total Cost (USD)', 'Lead Time (days)', 'CO2e (kg)', 'Install Time (min)',
-      'Seismic Grade', 'Fire Resistance', 'BSL Compliant', 'JIS Standards', 'DFMA Notes'
+      'Seismic Grade', 'Fire Resistance', 'DFMA Notes'
     ]
     const rows = parts.map(part => {
       const v = getVariant(part)
@@ -101,29 +106,19 @@ export default function MetricsPanel({ selectedVariants, visible, onClose, onVar
         v.assembly_time_min ?? '',
         v.seismic_grade != null ? `耐震等級${v.seismic_grade}` : '',
         v.fire_resistance_grade ?? '',
-        v.bsl_compliant ? 'Yes' : '',
-        (v.jis_standards ?? []).join('; '),
         v.dfma_notes ?? ''
       ]
     })
     const tw  = activeParts.reduce((s, p) => s + getVariant(p).weight_kg, 0)
     const tm  = activeParts.reduce((s, p) => s + getVariant(p).unit_cost_usd, 0)
     const tl  = activeParts.reduce((s, p) => s + (getVariant(p).labor_cost_usd ?? 0), 0)
-    rows.push(['', '', '', '', '', 'TOTALS', tw, tm, tl, tm + tl, '', '', '', '', '', '', '', ''])
+    rows.push(['', '', '', '', '', 'TOTALS', tw, tm, tl, tm + tl, '', '', '', '', '', ''])
     const csv = [headers, ...rows].map(r => r.map(c => `"${c}"`).join(',')).join('\n')
     const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' })
     const url  = URL.createObjectURL(blob)
     const a    = document.createElement('a')
-    a.href = url; a.download = 'IC-BOM.csv'; a.click()
+    a.href = url; a.download = 'genba-lab-bom.csv'; a.click()
     URL.revokeObjectURL(url)
-  }
-
-  function handleExportPDF() {
-    generatePDF(parts, selectedVariants, visible, projectSettings, formatCurrency)
-  }
-
-  function handleExportIFC() {
-    exportIFC(parts, selectedVariants)
   }
 
   const tabs = ['cost', 'carbon', 'bom', 'prefab', 'structural', 'supply', 'ai', 'schedule']
@@ -168,7 +163,7 @@ export default function MetricsPanel({ selectedVariants, visible, onClose, onVar
             <div className="est-divider" />
             <div className="est-metric">
               <span className="est-value">{formatCurrency(costPerM2)}</span>
-              <span className="est-unit">per m² ({FOOTPRINT_M2} m²)</span>
+              <span className="est-unit">per m² (≈{FLOOR_M2.toLocaleString()} m² floor)</span>
             </div>
           </div>
 
@@ -390,8 +385,6 @@ export default function MetricsPanel({ selectedVariants, visible, onClose, onVar
           </table>
           <div className="bom-export-row">
             <button className="bom-export" onClick={exportCSV}>Export CSV</button>
-            <button className="bom-export bom-export--pdf" onClick={handleExportPDF}>Export 施工要領書 PDF</button>
-            <button className="bom-export bom-export--ifc" onClick={handleExportIFC}>Export IFC</button>
           </div>
         </>
       )}
@@ -461,11 +454,15 @@ export default function MetricsPanel({ selectedVariants, visible, onClose, onVar
               </span>
               <span className="est-unit">耐震等級 (assembly min)</span>
             </div>
-            <div className="est-divider" />
-            <div className="est-metric">
-              <span className="est-value">{bslCompliantCount}</span>
-              <span className="est-unit">建基法適合 parts</span>
-            </div>
+            {hasBsl && (
+              <>
+                <div className="est-divider" />
+                <div className="est-metric">
+                  <span className="est-value">{bslCompliantCount}</span>
+                  <span className="est-unit">建基法適合 parts</span>
+                </div>
+              </>
+            )}
             <div className="est-divider" />
             <div className="est-metric">
               <span className="est-value">{primaryParts.length}</span>
@@ -481,8 +478,8 @@ export default function MetricsPanel({ selectedVariants, visible, onClose, onVar
                   <th>Role</th>
                   <th>耐震</th>
                   <th>耐火</th>
-                  <th>kN</th>
-                  <th>建基法</th>
+                  {hasKn && <th>kN</th>}
+                  {hasBsl && <th>建基法</th>}
                 </tr>
               </thead>
               <tbody>
@@ -510,12 +507,16 @@ export default function MetricsPanel({ selectedVariants, visible, onClose, onVar
                         {v.fire_resistance_grade === '2hr' ? '2h' :
                          v.fire_resistance_grade === '1hr' ? '1h' : '—'}
                       </td>
-                      <td className="bom-num">
-                        {v.load_bearing_kn != null ? v.load_bearing_kn.toLocaleString() : '—'}
-                      </td>
-                      <td className="bom-num">
-                        {v.bsl_compliant ? <span style={{ color: '#27ae60' }}>✓</span> : '—'}
-                      </td>
+                      {hasKn && (
+                        <td className="bom-num">
+                          {v.load_bearing_kn != null ? v.load_bearing_kn.toLocaleString() : '—'}
+                        </td>
+                      )}
+                      {hasBsl && (
+                        <td className="bom-num">
+                          {v.bsl_compliant ? <span style={{ color: '#27ae60' }}>✓</span> : '—'}
+                        </td>
+                      )}
                     </tr>
                   )
                 })}
@@ -523,8 +524,8 @@ export default function MetricsPanel({ selectedVariants, visible, onClose, onVar
             </table>
           </div>
 
-          {/* JIS Standards summary */}
-          <div className="jis-summary-section">
+          {/* JIS Standards summary (only when the model has JIS data) */}
+          {hasJis && <div className="jis-summary-section">
             <div className="ipr-section-label" style={{ marginBottom: 6 }}>JIS規格 適用一覧</div>
             {parts.filter(p => getVariant(p).jis_standards?.length > 0).map(part => {
               const v = getVariant(part)
@@ -540,9 +541,9 @@ export default function MetricsPanel({ selectedVariants, visible, onClose, onVar
                 </div>
               )
             })}
-          </div>
+          </div>}
 
-          <div className="carbon-footer-note">建築基準法 = Building Standards Act Japan · JIS = 日本工業規格</div>
+          {(hasBsl || hasJis) && <div className="carbon-footer-note">建築基準法 = Building Standards Act Japan · JIS = 日本工業規格</div>}
         </>
       )}
 

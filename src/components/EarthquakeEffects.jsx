@@ -68,14 +68,18 @@ function FaultLines({ magnitude, active }) {
   )
 }
 
+// Text labels only while few parts are at risk; spheres always (Html reprojects every frame).
+const STRESS_LABEL_LIMIT = 30
+
 function StressMarkers({ parts, visible, selectedVariants, magnitude, hasShaken }) {
+  const atRisk = parts
+    .filter(part => visible?.[part.id] !== false)
+    .map(part => ({ part, risk: riskForPart(part, selectedVariants, magnitude, hasShaken) }))
+    .filter(r => r.risk !== 'safe')
+  const showLabels = atRisk.length <= STRESS_LABEL_LIMIT
   return (
     <group>
-      {parts
-        .filter(part => visible?.[part.id] !== false)
-        .map(part => {
-          const risk = riskForPart(part, selectedVariants, magnitude, hasShaken)
-          if (risk === 'safe') return null
+      {atRisk.map(({ part, risk }) => {
           const [x, y, z] = part.pos
           const top = y + (part.size?.[1] ?? 1) / 2 + 0.55
           const color = risk === 'critical' ? '#e74c3c' : '#f39c12'
@@ -85,11 +89,13 @@ function StressMarkers({ parts, visible, selectedVariants, magnitude, hasShaken 
                 <sphereGeometry args={[0.12, 12, 8]} />
                 <meshBasicMaterial color={color} transparent opacity={0.82} depthWrite={false} />
               </mesh>
-              <Html position={[0, 0.28, 0]} center distanceFactor={9} style={{ pointerEvents: 'none' }}>
-                <div className={`eq-stress-label eq-stress-label--${risk}`}>
-                  {risk === 'critical' ? 'CRITICAL' : 'STRESS'}
-                </div>
-              </Html>
+              {showLabels && (
+                <Html position={[0, 0.28, 0]} center distanceFactor={9} style={{ pointerEvents: 'none' }}>
+                  <div className={`eq-stress-label eq-stress-label--${risk}`}>
+                    {risk === 'critical' ? 'CRITICAL' : 'STRESS'}
+                  </div>
+                </Html>
+              )}
             </group>
           )
         })}
@@ -131,17 +137,21 @@ export default function EarthquakeEffects({
   magnitude,
   isShaking,
   hasShaken,
+  frame,
 }) {
   if (!parts?.length) return null
+  // Ground effects were sized for a ≈5 m kit: scale and centre them on the model.
+  const k = Math.max(1, (frame?.radius ?? 4) / 4.5)
+  const [cx, , cz] = frame?.center ?? [0, 0, 0]
   const showStress = isShaking || hasShaken
   return (
     <group>
       <CameraRumble active={isShaking} magnitude={magnitude} />
       {(isShaking || hasShaken) && (
-        <>
+        <group position={[cx, 0, cz]} scale={[k, 1, k]}>
           <ShockwaveRings magnitude={magnitude} active={isShaking} />
           <FaultLines magnitude={magnitude} active={isShaking} />
-        </>
+        </group>
       )}
       {showStress && (
         <StressMarkers

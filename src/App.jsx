@@ -13,6 +13,7 @@ import FirePanel from './components/FirePanel'
 import { useKit } from './components/KitContext'
 import IfcLoadButton from './components/IfcLoadButton'
 import { computeCraneLayout, partBounds } from './utils/craneLayout'
+import { estimateFloorArea } from './utils/modelMetrics'
 import './App.css'
 
 export default function App() {
@@ -38,6 +39,8 @@ export default function App() {
 
   const [showMetrics, setShowMetrics] = useState(false)
   const [showDimensions, setShowDimensions] = useState(false)
+  // Connection lines clutter real models; off by default.
+  const [showConnections, setShowConnections] = useState(false)
 
   const [sectionCutActive, setSectionCutActive] = useState(false)
   const [sectionCutY, setSectionCutY] = useState(3.5)
@@ -123,6 +126,7 @@ export default function App() {
       if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) { e.preventDefault(); redo(); return }
       if (e.key === 'e' || e.key === 'E') { setExploded(v => !v); setSequenceMode(false) }
       if (e.key === 'd' || e.key === 'D') setShowDimensions(v => !v)
+      if (e.key === 'l' || e.key === 'L') setShowConnections(v => !v)
       if (e.key === 'm' || e.key === 'M') setShowMetrics(v => !v)
       if (e.key === 'x' || e.key === 'X') setSectionCutActive(v => !v)
       if (e.key === 'f' || e.key === 'F') toggleFactoryMode()
@@ -354,7 +358,7 @@ export default function App() {
       const v = p.variants[selectedVariants[p.id] ?? 0]
       return s + (v?.unit_cost_usd ?? 0) + (v?.labor_cost_usd ?? 0)
     }, 0)
-    const carbonPerM2 = totalCarbon / 16
+    const carbonPerM2 = totalCarbon / estimateFloorArea(parts)
     const casbee = carbonPerM2 <= 200 ? 'S' : carbonPerM2 <= 350 ? 'A' : carbonPerM2 <= 500 ? 'B+' : carbonPerM2 <= 700 ? 'B-' : 'C'
     return {
       carbon: Math.round(totalCarbon),
@@ -462,6 +466,8 @@ export default function App() {
         sectionCutActive={sectionCutActive}
         onToggleSectionCut={() => setSectionCutActive(v => !v)}
         showDimensions={showDimensions}
+        showConnections={showConnections}
+        onToggleConnections={() => setShowConnections(v => !v)}
         onToggleDimensions={() => setShowDimensions(v => !v)}
         showMetrics={showMetrics}
         onToggleMetrics={() => setShowMetrics(v => !v)}
@@ -523,6 +529,7 @@ export default function App() {
         sequenceMode={sequenceMode}
         sequenceStep={sequenceStep}
         showDimensions={showDimensions}
+        showConnections={showConnections}
         sectionCutActive={sectionCutActive}
         sectionCutY={sectionCutY}
         factoryMode={factoryMode}
