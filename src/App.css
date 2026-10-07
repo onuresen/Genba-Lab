@@ -789,6 +789,44 @@
 }
 .ifc-status--error { color: #c0392b; }
 
+/* ─── Simulation dock: sim panels stack bottom-right ─── */
+.sim-dock {
+  position: fixed; right: 280px; bottom: 20px; z-index: 10;
+  display: flex; flex-direction: column; justify-content: flex-end; align-items: flex-end; gap: 10px;
+  max-height: calc(100vh - 110px); overflow-y: auto; pointer-events: none;
+}
+.sim-dock:empty { display: none; }
+.sim-dock .metrics-panel {
+  position: relative !important; right: auto !important; left: auto !important;
+  top: auto !important; bottom: auto !important; flex-shrink: 0; pointer-events: auto;
+}
+
+/* ─── Wind ───────────────────────────────────────────── */
+.wind-panel__title { font-weight: 700; font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: #2563eb; }
+.wind-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.wind-row__label { font-size: 11px; color: #7f8c8d; width: 46px; flex-shrink: 0; }
+.wind-dirs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 3px; flex: 1; }
+.wind-dirs--terrain { grid-template-columns: repeat(3, 1fr); }
+.wind-dirs button {
+  padding: 3px 0; border: 1px solid #dbeafe; border-radius: 5px; background: #f8fafc;
+  font-size: 10px; font-weight: 700; color: #334155; cursor: pointer;
+}
+.wind-dirs button.active { background: #2563eb; border-color: #2563eb; color: #fff; }
+.wind-press { color: #2563eb; }
+.wind-suck { color: #dc2626; }
+.wind-profile { display: block; margin-top: 8px; }
+.wind-profile__axis { font-size: 8px; fill: #94a3b8; }
+.wind-legend { display: flex; gap: 12px; font-size: 10px; color: #64748b; margin-top: 4px; }
+.wind-legend i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
+.wind-label {
+  padding: 3px 8px; border-radius: 10px; font-size: 11px; font-weight: 700; white-space: nowrap;
+  color: #fff; box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+}
+.wind-label--press { background: rgba(37,99,235,0.92); }
+.wind-label--suck { background: rgba(220,38,38,0.92); }
+[data-theme="dark"] .wind-dirs button { background: #1e2533; border-color: #334155; color: #cbd5e1; }
+[data-theme="dark"] .wind-dirs button.active { background: #2563eb; border-color: #2563eb; color: #fff; }
+
 /* ─── Rain & water flow ──────────────────────────────── */
 .rain-panel__title { font-weight: 700; font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: #0284c7; }
 .rain-panel__row { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 4px; }
@@ -2619,6 +2657,9 @@
     border-radius: 12px 12px 0 0;
     max-height: 52vh;
   }
+
+  .sim-dock { right: 8px; left: 8px; bottom: 0; align-items: stretch; max-height: 60vh; }
+  .sim-dock .metrics-panel { width: 100% !important; max-width: none !important; }
 
   /* CranePanel and EarthquakePanel — override inline right:280 */
   .crane-panel,

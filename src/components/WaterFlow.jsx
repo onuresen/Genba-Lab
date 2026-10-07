@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useFrame } from '@react-three/fiber'
 import { Html } from '@react-three/drei'
 import * as THREE from 'three'
-import { getCachedGeometry } from '../utils/ifcGeometryStore'
+import { partWorldEntries } from '../utils/worldMesh'
 import { buildCollisionMesh, isDrainPart, simulateRunoff } from '../utils/waterFlow'
 
 const MAX_DROPS = 320
@@ -12,35 +12,19 @@ const DROP_SPEED = 2.2 // m/s along a path (visual only)
 const COLORS = { pond: '#1d4ed8', ground: '#0891b2', drain: '#16a34a' }
 const dummy = new THREE.Object3D()
 
-// World-space triangles for the visible parts (assembled positions).
+// Surfaces to rain on, plus drain boxes that catch water.
 function collectEntries(parts, visible) {
-  const entries = []
-  const drains = []
-  for (const p of parts) {
-    if (!visible[p.id]) continue
-    const g = getCachedGeometry(p.ifcGeometry) ?? new THREE.BoxGeometry(...p.size)
-    const src = g.getAttribute('position').array
-    const pos = new Float32Array(src.length)
-    for (let i = 0; i < src.length; i += 3) {
-      pos[i] = src[i] + p.pos[0]
-      pos[i + 1] = src[i + 1] + p.pos[1]
-      pos[i + 2] = src[i + 2] + p.pos[2]
+  const drains = parts.filter(p => visible[p.id] && isDrainPart(p)).map(p => {
+    const h = p.size.map(s => s / 2)
+    return {
+      partId: p.id,
+      box: new THREE.Box3(
+        new THREE.Vector3(p.pos[0] - h[0], p.pos[1] - h[1], p.pos[2] - h[2]),
+        new THREE.Vector3(p.pos[0] + h[0], p.pos[1] + h[1], p.pos[2] + h[2]),
+      ),
     }
-    const index = g.getIndex()
-    if (isDrainPart(p)) {
-      const h = p.size.map(s => s / 2)
-      drains.push({
-        partId: p.id,
-        box: new THREE.Box3(
-          new THREE.Vector3(p.pos[0] - h[0], p.pos[1] - h[1], p.pos[2] - h[2]),
-          new THREE.Vector3(p.pos[0] + h[0], p.pos[1] + h[1], p.pos[2] + h[2]),
-        ),
-      })
-      continue // drains catch water; they are not surfaces for it to land on
-    }
-    entries.push({ partId: p.id, positions: pos, indices: index ? index.array : null })
-  }
-  return { entries, drains }
+  })
+  return { entries: partWorldEntries(parts, visible, isDrainPart), drains }
 }
 
 // Path polyline → cumulative lengths, for moving droplets along it.
@@ -182,8 +166,6 @@ export default function WaterFlow({ parts, visible, rainfall, onResult }) {
 
   if (!result) return null
   const topPools = result.collect.filter(c => c.kind !== 'drain').slice(0, 3)
-  // Labels stay readable on big models (camera distance grows with model size).
-  const labelScale = Math.max(12, bounds.isEmpty() ? 12 : bounds.getSize(tmp).length() * 0.6)
 
   return (
     <group>
@@ -205,7 +187,7 @@ export default function WaterFlow({ parts, visible, rainfall, onResult }) {
         <meshBasicMaterial color="#93c5fd" transparent opacity={0.5} depthWrite={false} />
       </instancedMesh>
       {topPools.map((p, i) => (
-        <Html key={i} position={[p.x, p.y + 0.6, p.z]} center distanceFactor={labelScale} style={{ pointerEvents: 'none' }}>
+        <Html key={i} position={[p.x, p.y + 0.6, p.z]} center style={{ pointerEvents: 'none' }}>
           <div className={`water-label water-label--${p.kind}`}>
             {p.kind === 'pond' ? 'Ponding' : 'Runoff'} {p.flow.toFixed(2)} m³/h
           </div>

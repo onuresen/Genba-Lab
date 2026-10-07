@@ -20,7 +20,7 @@ Load an IFC file. Each element becomes a part you can test.
 - **Earthquake.** Shake the model by magnitude.
 - **Fire.** Spread by fire rating. Fire compartments per storey.
 - **Rain & water flow.** Rain lands on the real surfaces, runs downhill, drips off edges and collects. Shows ponds, drip zones and runoff per mm/h.
-- **Wind.** Pressure arrows, streamlines.
+- **Wind.** BSL wind load on the real facades: pressure map, arrows, streamlines, base shear, roof uplift. Speed, direction and terrain.
 - **Thermal and acoustic.** Overlays from material and IFC data.
 - **Metrics.** Cost, carbon per m², BOM (CSV), schedule, supply risk.
 - **Material what-if.** Switch a wall or slab to steel or timber. See weight, carbon and cost change.

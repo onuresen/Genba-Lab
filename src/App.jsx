@@ -11,10 +11,12 @@ import EarthquakePanel from './components/EarthquakePanel'
 import FloorPlanPanel from './components/FloorPlanPanel'
 import FirePanel from './components/FirePanel'
 import RainPanel from './components/RainPanel'
+import WindPanel from './components/WindPanel'
 import { useKit } from './components/KitContext'
 import IfcLoadButton from './components/IfcLoadButton'
 import { computeCraneLayout, partBounds } from './utils/craneLayout'
 import { estimateFloorArea } from './utils/modelMetrics'
+import { windAt } from './utils/windLoad'
 import './App.css'
 
 export default function App() {
@@ -68,7 +70,10 @@ export default function App() {
 
   // ── Wind arrows ──────────────────────────────────────────
   const [showWindArrows, setShowWindArrows] = useState(false)
-  const [windSpeed, setWindSpeed] = useState(8.0)
+  const [windSpeed, setWindSpeed] = useState(34)        // BSL base wind speed V0 (m/s)
+  const [windDir, setWindDir] = useState(270)           // blowing from (deg, N = −Z)
+  const [windTerrain, setWindTerrain] = useState('suburban')
+  const [windResult, setWindResult] = useState(null)    // wind load result (or { busy })
 
   // ── Water simulation ─────────────────────────────────────
   const [showWaterSim, setShowWaterSim] = useState(false)
@@ -207,6 +212,12 @@ export default function App() {
   }, [])
 
   // IFC models are often far bigger than the default camera view.
+  // Select a part from a simulation panel list.
+  const selectPartById = useCallback(id => {
+    const p = parts.find(x => x.id === id)
+    if (p) setSelected({ ...p, meta: p.variants[0].meta })
+  }, [parts])
+
   // Frame the whole model once per imported model (also after reload).
   const ifcModelKey = projectSettings?.source?.modelKey
   useEffect(() => {
@@ -552,6 +563,9 @@ export default function App() {
         windSpeed={windSpeed}
         showWaterSim={showWaterSim}
         rainfall={rainfall}
+        windDir={windDir}
+        windTerrain={windTerrain}
+        onWindResult={setWindResult}
         onWaterResult={setWaterResult}
         showThermal={showThermal}
         showAcoustic={showAcoustic}
@@ -606,63 +620,77 @@ export default function App() {
 
       {showShortcuts && <ShortcutsModal onClose={() => setShowShortcuts(false)} />}
 
-      {showCrane && (
-        <CranePanel
-          sequenceMode={sequenceMode}
-          sequenceStep={sequenceStep}
-          currentPartWeight={currentPartWeight}
-          showRadius={showCraneRadius}
-          onToggleRadius={() => setShowCraneRadius(v => !v)}
-          onWindChange={setWindSpeed}
-          liveWind={showWindArrows}
-          showSecondCrane={showSecondCrane}
-          onToggleSecondCrane={() => setShowSecondCrane(v => !v)}
-          secondCraneX={secondCraneX}
-          onSecondCraneX={setSecondCraneX}
-          liftPlanMode={liftPlanMode}
-          liftStart={liftStart}
-          liftEnd={liftEnd}
-          onToggleLiftPlan={handleToggleLiftPlan}
-          craneCabView={craneCabView}
-          onToggleCabView={() => setCraneCabView(v => !v)}
-        />
-      )}
+      {/* Simulation panels stack bottom-right. */}
+      <div className="sim-dock">
+        {showCrane && (
+          <CranePanel
+            sequenceMode={sequenceMode}
+            sequenceStep={sequenceStep}
+            currentPartWeight={currentPartWeight}
+            showRadius={showCraneRadius}
+            onToggleRadius={() => setShowCraneRadius(v => !v)}
+            windOverride={showWindArrows ? +windAt(computeCraneLayout(parts).jibY, windSpeed, windTerrain).toFixed(1) : null}
+            showSecondCrane={showSecondCrane}
+            onToggleSecondCrane={() => setShowSecondCrane(v => !v)}
+            secondCraneX={secondCraneX}
+            onSecondCraneX={setSecondCraneX}
+            liftPlanMode={liftPlanMode}
+            liftStart={liftStart}
+            liftEnd={liftEnd}
+            onToggleLiftPlan={handleToggleLiftPlan}
+            craneCabView={craneCabView}
+            onToggleCabView={() => setCraneCabView(v => !v)}
+          />
+        )}
 
-      {showWaterSim && (
-        <RainPanel
-          rainfall={rainfall}
-          onRainfall={setRainfall}
-          result={waterResult}
-          onSelectPart={id => {
-            const p = parts.find(x => x.id === id)
-            if (p) setSelected({ ...p, meta: p.variants[0].meta })
-          }}
-        />
-      )}
+        {showWaterSim && (
+          <RainPanel
+            rainfall={rainfall}
+            onRainfall={setRainfall}
+            result={waterResult}
+            onSelectPart={selectPartById}
+          />
+        )}
 
-      {fireMode && (
-        <FirePanel
-          fireState={fireState}
-          fireElapsed={fireElapsed}
-          fireIntensity={fireIntensity}
-          onFireIntensity={setFireIntensity}
-          onIgniteFirst={handleIgniteFirst}
-          onExtinguish={handleExtinguish}
-          selectedVariants={selectedVariants}
-        />
-      )}
+        {fireMode && (
+          <FirePanel
+            fireState={fireState}
+            fireElapsed={fireElapsed}
+            fireIntensity={fireIntensity}
+            onFireIntensity={setFireIntensity}
+            onIgniteFirst={handleIgniteFirst}
+            onExtinguish={handleExtinguish}
+            selectedVariants={selectedVariants}
+          />
+        )}
 
-      {showEarthquake && (
-        <EarthquakePanel
-          magnitude={earthquakeMagnitude}
-          onMagnitude={setEarthquakeMagnitude}
-          isShaking={isShaking}
-          countdown={earthquakeCountdown}
-          onShake={handleShake}
-          hasShaken={hasShaken}
-          selectedVariants={selectedVariants}
-        />
-      )}
+        {showEarthquake && (
+          <EarthquakePanel
+            magnitude={earthquakeMagnitude}
+            onMagnitude={setEarthquakeMagnitude}
+            isShaking={isShaking}
+            countdown={earthquakeCountdown}
+            onShake={handleShake}
+            hasShaken={hasShaken}
+            selectedVariants={selectedVariants}
+          />
+        )}
+
+        {showWindArrows && (
+          <WindPanel
+            windSpeed={windSpeed}
+            onWindSpeed={setWindSpeed}
+            windDir={windDir}
+            onWindDir={setWindDir}
+            terrain={windTerrain}
+            onTerrain={setWindTerrain}
+            result={windResult}
+            parts={parts}
+            selectedVariants={selectedVariants}
+            onSelectPart={selectPartById}
+          />
+        )}
+      </div>
 
       {showFloorPlan && (
         <FloorPlanPanel

@@ -25,23 +25,24 @@ function craneSpecs(layout) {
   ]
 }
 
-export default function CranePanel({ sequenceMode, sequenceStep, currentPartWeight, showRadius, onToggleRadius, onWindChange, liveWind, showSecondCrane, onToggleSecondCrane, secondCraneX, onSecondCraneX, liftPlanMode, liftStart, liftEnd, onToggleLiftPlan, craneCabView, onToggleCabView }) {
+export default function CranePanel({ sequenceMode, sequenceStep, currentPartWeight, showRadius, onToggleRadius, windOverride, showSecondCrane, onToggleSecondCrane, secondCraneX, onSecondCraneX, liftPlanMode, liftStart, liftEnd, onToggleLiftPlan, craneCabView, onToggleCabView }) {
   const { parts } = useKit()
   const layout = useMemo(() => computeCraneLayout(parts), [parts])
   const SPECS = craneSpecs(layout)
 
   // ── Wind simulation ─────────────────────────────────────
-  const [windSpeed, setWindSpeed] = useState(8.0)
+  // Gusty demo wind, unless the wind simulation sets it (speed at jib height).
+  const [gustWind, setGustWind] = useState(8.0)
   const windRef = useRef(8.0)
   useEffect(() => {
+    if (windOverride != null) return
     const id = setInterval(() => {
       windRef.current = Math.max(0, Math.min(25, windRef.current + (Math.random() - 0.5) * 0.6))
-      const ws = +(windRef.current.toFixed(1))
-      setWindSpeed(ws)
-      if (liveWind) onWindChange?.(ws)
+      setGustWind(+(windRef.current.toFixed(1)))
     }, 2000)
     return () => clearInterval(id)
-  }, [liveWind, onWindChange])
+  }, [windOverride])
+  const windSpeed = windOverride ?? gustWind
 
   // ── Active lift data ────────────────────────────────────
   const { activeRadius, partName } = useMemo(() => {
@@ -163,7 +164,7 @@ export default function CranePanel({ sequenceMode, sequenceStep, currentPartWeig
           }} />
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: '#888' }}>
-          <span>Beaufort {bf} · EN 14439 limit 20 m/s</span>
+          <span>{windOverride != null ? 'From wind sim, at jib height · ' : ''}Beaufort {bf} · limit 20 m/s</span>
           <span style={{
             fontWeight: 700, color: windColor,
             background: windColor + '22', padding: '1px 7px', borderRadius: 10,

@@ -100,7 +100,7 @@ Every simulation reads one array of **parts**. IFC import builds it (`ifcToKit.j
 | `cameraCmd` `{ type: 'preset'\|'frame', …, ts }` | Camera commands (change `ts` to re-fire) |
 | `darkMode` (localStorage `genba-lab-dark`), `showShortcuts`, `mobileSidebarOpen` | UI |
 | `showCrane`, `showCraneRadius`, `showSecondCrane`, `secondCraneX`, `liftPlanMode`, `liftStart`, `liftEnd`, `craneCabView` | Crane |
-| `showWindArrows`, `windSpeed` | Wind |
+| `showWindArrows` (wind sim on), `windSpeed` (BSL V0, m/s), `windDir` (from, deg), `windTerrain`, `windResult` | Wind |
 | `showWaterSim`, `rainfall` (mm/h), `waterResult` | Rain & water flow |
 | `showThermal`, `showAcoustic` | Material overlays |
 | `fireMode`, `fireState`, `fireElapsed`, `fireIntensity`, `showFireCompartments` | Fire |
@@ -149,7 +149,7 @@ Real models are 20–100 m, not the 5 m Kit-of-Parts kit. Never hard-code world 
 | `CinematicMode.jsx` | Scripted demo tour, scaled by `frame`. |
 | `FactoryGrid.jsx` | Prefab bay planner: real meshes, transport-size/weight/lead-time warnings, drag to resequence. |
 | `DimensionLines.jsx` | Model width/height/depth. |
-| `WindArrows.jsx`, `WindStreamlines.jsx` | Wind pressure arrows + streamlines. |
+| `WindLoad.jsx` | Wind on real surfaces: pressure heat map (blue in / red out), pressure arrows, streamlines around the model, peak labels. |
 | `WaterFlow.jsx` | Rain runoff on real surfaces: flow lines, moving droplets, ponds, drip zones, rain streaks. Recomputes on visibility / rainfall change. |
 | `FireEffects.jsx`, `FireCompartments.jsx` | Fire visuals; compartment boxes by storey vs BSL 500 m². |
 | `EarthquakeEffects.jsx` | Camera rumble, ground rings/faults (scaled), stress markers. |
@@ -168,8 +168,9 @@ Real models are 20–100 m, not the 5 m Kit-of-Parts kit. Never hard-code world 
 | `AIOptimiserPanel.jsx` | Lowest-carbon variant per part that keeps the seismic grade. |
 | `SupplyRiskPanel.jsx` | Lead-time risk, shortage simulation. |
 | `GanttPanel.jsx` | Schedule by week; highlights parts in 3D. |
-| `CranePanel.jsx` | Crane specs, live lift load, wind, lift path planner, cab view, second crane. |
+| `CranePanel.jsx` | Crane specs, live lift load, wind (gusty demo, or the wind sim's speed at jib height), lift path planner, cab view, second crane. |
 | `EarthquakePanel.jsx`, `FirePanel.jsx` | Simulation controls + verdicts. |
+| `WindPanel.jsx` | V0 + presets (to super typhoon 46), direction (8), terrain; top speed, push (base shear), peak pressure/suction, overturning, force by height, parts lifted more than their weight. |
 | `RainPanel.jsx` | Rainfall (mm/h, presets up to ゲリラ豪雨 100), catchment, runoff, pond/ground/drain shares, where water collects. |
 | `FloorPlanPanel.jsx` | 2D plan, SVG export. |
 | `ShortcutsModal.jsx`, `ShareButton.jsx` | Shortcuts (E D L M X F S 0-3 ?), screenshot share. |
@@ -185,6 +186,8 @@ Real models are 20–100 m, not the 5 m Kit-of-Parts kit. Never hard-code world 
 | `modelMetrics.js`, `craneLayout.js`, `factoryLayout.js` | Model-scale helpers (see Scale). |
 | `materialMetrics.js` | Default thermal / supply-risk / STC values and colours. |
 | `renderActivity.js` | Which effects need a continuous render loop. |
+| `worldMesh.js` | `partWorldEntries(parts, visible, skip)`: world triangles for raycast sims. |
+| `windLoad.js` | Wind engine: BSL `heightFactor`, `gustFactor`, `velocityPressure`, `windVector`, `computeWindLoad`, `windStreamlines`. Pure, tested. |
 | `waterFlow.js` | Runoff engine (three-mesh-bvh): `buildCollisionMesh`, `traceDrop`, `simulateRunoff`, `isDrainPart`. Pure, tested. |
 
 ---
@@ -198,6 +201,17 @@ Real models are 20–100 m, not the 5 m Kit-of-Parts kit. Never hard-code world 
 - Part lookup uses the hit triangle's first **vertex** (`vertexPart`): MeshBVH reorders the index buffer.
 - Simulates assembled positions of visible parts. Uses loaded meshes (`getCachedGeometry`), box fallback.
 - Indicative: no infiltration, gutter capacity, or pond overflow.
+
+## Wind
+
+- BSL method, simplified (告示1454): Er(z) = 1.7 (max(z, Zb)/ZG)^α, q = 0.6 Er² Gf V0². Terrain II/III/IV = open/suburban/city.
+- Cp: windward +0.8 (q at its height), leeward −0.4, side −0.7, flat roof −1.0, steep windward roof +0.3, sheltered −0.3 (q at the top).
+- Per triangle of the merged mesh. Skipped: undersides, faces touching or inside another part (ray parity per part), roofs with something above.
+- Windward faces with something upwind are sheltered.
+- Outputs: base shear, overturning, peak pressure/suction, force by height (10 bands), force per part (uplift vs weight).
+- Streamlines: march downwind; when blocked, step up or sideways; drift back once clear.
+- North = −Z of the model. Indicative: no wind tunnel, no internal pressure.
+- Sim panels (crane, rain, wind, fire, earthquake) live in `.sim-dock` (bottom-right stack).
 
 ## Key decisions
 
@@ -218,6 +232,11 @@ Real models are 20–100 m, not the 5 m Kit-of-Parts kit. Never hard-code world 
   - **Why:** Shows where water lands, flows and collects on any IFC in < 0.2 s. A fluid solver would be slow and need a watertight mesh.
   - **Alternative:** Heightfield / shallow-water grid. Deferred: loses overhangs and multi-level roofs.
   - **Revisit when:** pond depth or overflow timing matters.
+  - **Confidence:** med
+- **Decision:** Wind load uses the BSL formula on the real mesh, with ray-based shelter.
+  - **Why:** Real numbers (kN, kPa) a Japanese engineer recognises, on any IFC, in about a second.
+  - **Alternative:** CFD. Rejected: far too slow for the browser.
+  - **Revisit when:** tall or odd-shaped buildings need real Cp (wind tunnel data).
   - **Confidence:** med
 - **Decision:** What-if material variants use volume equivalence factors, not re-design.
   - **Why:** Gives instant, comparable what-ifs from IFC data alone.

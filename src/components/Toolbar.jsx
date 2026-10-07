@@ -126,7 +126,7 @@ export default function Toolbar({
         </button>
         <button
           className={`tb-btn ${showWindArrows ? 'tb-btn--active' : ''}`}
-          title="Wind Load Arrows"
+          title="Wind"
           onClick={onToggleWindArrows}
           disabled={factoryMode}
         >
