@@ -5,6 +5,7 @@ The built app bundles these libraries. Each keeps its own license.
 
 | Library | License | Notes |
 |---|---|---|
+| OpenBIM Core 0.1.1 | MIT | Shared IFC ingestion contract; exact package artifact is committed under `vendor/` from source commit `d8a490fd`. |
 | [web-ifc](https://github.com/ThatOpen/engine_web-ifc) | MPL-2.0 | IFC parser (JS + WebAssembly). Used unmodified. Source: the link. |
 | [three](https://github.com/mrdoob/three.js) | MIT | 3D engine |
 | [React](https://github.com/facebook/react), React DOM | MIT | UI |

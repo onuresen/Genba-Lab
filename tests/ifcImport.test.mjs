@@ -1,12 +1,20 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { loadFixture, openWebIfc } from './ifcTestHelpers.mjs'
-import { parseIfc } from '../src/utils/ifcParse.js'
+import { parseIfc, sha256Digest } from '@onuresen/openbim-core'
+import { projectOpenBimResultToGenba } from '../src/utils/openBimProjection.js'
 import { ifcToKit, MAX_INDIVIDUAL_PARTS } from '../src/utils/ifcToKit.js'
 
 const { kit: source, ifcText } = loadFixture('basic-kit')
 const { api, WebIFC } = await openWebIfc()
-const parsed = parseIfc(api, WebIFC, new TextEncoder().encode(ifcText))
+const fixtureBytes = new TextEncoder().encode(ifcText)
+const kernelResult = parseIfc(api, WebIFC, fixtureBytes, {
+  bindingId: 'genba-fixture',
+  assetRef: 'fixtures/basic-kit.ifc',
+  contentDigest: await sha256Digest(fixtureBytes),
+  parserVersion: '0.0.78',
+})
+const parsed = projectOpenBimResultToGenba(kernelResult)
 
 test('parser reads every fixture element with geometry', () => {
   assert.equal(parsed.elements.length, source.parts.length)
@@ -16,6 +24,41 @@ test('parser reads every fixture element with geometry', () => {
     assert.ok(el.indices.length > 0)
     assert.equal(el.positions.length, el.normals.length)
   }
+})
+
+test('shared kernel provenance survives the Genba projection', () => {
+  assert.equal(parsed.openBim.coreVersion, '0.1.1')
+  assert.match(parsed.openBim.contentDigest, /^sha256:[0-9a-f]{64}$/)
+  assert.ok(parsed.openBim.sourceEntityCount >= parsed.elements.length)
+  assert.ok(parsed.openBim.nativeRelationshipCount > 0)
+})
+
+test('Genba projection keeps product filtering local without truncating core facts', () => {
+  const candidate = structuredClone(kernelResult)
+  const project = candidate.entities.find(entity => entity.ifcTypeName === 'IFCPROJECT')
+  project.longName = 'Genba Long Project Name'
+  const geometryEntity = candidate.entities.find(entity => entity.geometryPacketIds.length)
+  candidate.entities.push({
+    ...geometryEntity,
+    sourceKey: 'ifc:genba-fixture:guid:0SSSSSSSSSSSSSSSSSSSSS',
+    expressId: 999001,
+    globalId: '0SSSSSSSSSSSSSSSSSSSSS',
+    ifcType: 'IfcSpace',
+    ifcTypeName: 'IFCSPACE',
+    name: 'Filtered Space',
+    propertySets: [{
+      name: 'Pset_Many', ifcType: 'IfcPropertySet', ifcTypeName: 'IFCPROPERTYSET',
+      expressId: 999002, ownership: 'occurrence',
+      values: Array.from({ length: 65 }, (_, index) => ({ name: `P${index}`, value: index })),
+    }],
+  })
+  const projected = projectOpenBimResultToGenba(candidate)
+  assert.equal(projected.projectName, 'Genba Long Project Name')
+  assert.equal(projected.elements.some(element => element.expressID === 999001), false)
+
+  geometryEntity.propertySets = candidate.entities.at(-1).propertySets
+  const withManyFacts = projectOpenBimResultToGenba(candidate)
+  assert.equal(Object.keys(withManyFacts.elements.find(element => element.expressID === geometryEntity.expressId).psets.Pset_Many).length, 65)
 })
 
 test('round trip keeps part sizes (metres)', () => {
@@ -41,6 +84,8 @@ test('kit is valid: unique ids, 1..N sequence, symmetric connections, on the gro
   const lowest = Math.min(...kit.parts.map(p => p.pos[1] - p.size[1] / 2))
   assert.ok(Math.abs(lowest) < 1e-3, `lowest point ${lowest}`)
   assert.ok(kit.presets.length > 0 && kit.presets[0].visible)
+  assert.equal(kit.projectSettings.source.openBimCoreVersion, '0.1.1')
+  assert.equal(kit.projectSettings.source.contentDigest, parsed.openBim.contentDigest)
 })
 
 test('large models group by storey and class', () => {

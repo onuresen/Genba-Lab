@@ -336,7 +336,16 @@ export function ifcToKit(parsed, { fileName = 'model.ifc', modelKey = 'ifc' } = 
     kit: {
       parts,
       presets,
-      projectSettings: { name, source: { type: 'ifc', fileName, schema: parsed.schema, modelKey } },
+      projectSettings: {
+        name,
+        source: {
+          type: 'ifc', fileName, schema: parsed.schema, modelKey,
+          ...(parsed.openBim ? {
+            openBimCoreVersion: parsed.openBim.coreVersion,
+            contentDigest: parsed.openBim.contentDigest,
+          } : {}),
+        },
+      },
     },
     geometries,
     summary: {

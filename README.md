@@ -55,7 +55,7 @@ npm run build    # output in dist/
 
 ## How it works
 
-1. `web-ifc` parses the file in a Web Worker.
+1. Pinned OpenBIM Core + `web-ifc` parse the file losslessly in a Web Worker; Genba then projects simulation parts.
 2. Elements become parts (over 120 elements: grouped by storey + type).
 3. Meshes go to IndexedDB. Part data goes to localStorage.
 4. Every simulation reads the same part data.
@@ -64,7 +64,7 @@ More detail for contributors: `CLAUDE.md`.
 
 ## Built with
 
-React · Three.js · React Three Fiber · GSAP · web-ifc · Vite
+React · Three.js · React Three Fiber · GSAP · OpenBIM Core · web-ifc · Vite
 
 ## Origin
 

@@ -37,7 +37,7 @@ Focus: architects and engineers, with Japanese context (耐震等級, fire ratin
 | 3D helpers | @react-three/drei | 10.7 |
 | Animation | GSAP | 3.15 |
 | Icons | lucide-react | 1.8 |
-| IFC | web-ifc (WASM, Web Worker) | 0.0.78 |
+| IFC | OpenBIM Core + web-ifc (WASM, Web Worker) | 0.1.1 / 0.0.78 |
 | Build | Vite | 8 |
 
 No Tailwind. Styles live in `src/App.css` plus inline styles. Dark mode via `[data-theme="dark"]` on `#root-container`.
@@ -126,7 +126,10 @@ Real models are 20–100 m, not the 5 m Kit-of-Parts kit. Never hard-code world 
 
 ## IFC Import
 
-- `IfcLoadButton` → `importIfcFile` (worker) → `ifcToKit` → `KitContext.loadKitData`.
+- `IfcLoadButton` → `importIfcFile` → OpenBIM Core in the worker → `openBimProjection` → `ifcToKit` → `KitContext.loadKitData`.
+- OpenBIM Core 0.1.1 is consumed as the exact committed package artifact in `vendor/`, built from Vibe_Coding source commit `d8a490fd`; `package-lock.json` pins its integrity and keeps the existing `npm ci` deployment reproducible.
+- The core owns lossless entities, source identity, complete facts, native relationships and geometry packets. Genba's projection deliberately retains its existing display/simulation choices: class skipping, one merged mesh per element, grouping over 120 elements, estimates and touching-box connections.
+- The exact IFC digest and OpenBIM Core version are retained in `projectSettings.source`; no file content is uploaded.
 - One part per element. Over 120 elements: one part per storey + IFC class (`MAX_INDIVIDUAL_PARTS`).
 - Sequence: storey → build order (footing, slab, column, beam, wall, …) → height. `fire_compartment` = storey.
 - Connections: touching bounding boxes (2 cm), max 6 per part.
@@ -174,7 +177,7 @@ Real models are 20–100 m, not the 5 m Kit-of-Parts kit. Never hard-code world 
 ### Utils
 | File | Role |
 |---|---|
-| `ifcParse.js` | IFC → element records (mesh, class, storey, colour, psets, materials). |
+| `openBimProjection.js` | Lossless OpenBIM Core result → Genba element records; owns class filtering, flat psets and per-element mesh merging. |
 | `ifcProperties.js` | Material table, rating parsers, `combineFacts`, `estimateSeismicGrade`, `whatIfVariants`. |
 | `ifcToKit.js` | Elements → kit. |
 | `ifcImport.js`, `../workers/ifcWorker.js` | Browser import pipeline. |
@@ -187,6 +190,11 @@ Real models are 20–100 m, not the 5 m Kit-of-Parts kit. Never hard-code world 
 
 ## Key decisions
 
+- **Decision:** Consume the exact pinned OpenBIM Core package and keep Genba's simulation projection local.
+  - **Why:** CDI and Genba can improve one source-faithful IFC parser without sharing viewers, product state or simulation assumptions.
+  - **Alternative:** Keep Genba's private parser or import a sibling source folder. Rejected: both recreate drift and make clean clones depend on another checkout.
+  - **Revisit when:** OpenBIM Core has an approved public package/repository release; replace the committed tarball without changing the projection contract.
+  - **Confidence:** high
 - **Decision:** IFC elements become normal kit parts; meshes live outside the kit JSON.
   - **Why:** Every simulation already works on parts. Mesh data is too big for localStorage.
   - **Alternative:** A separate read-only viewer layer. Rejected: no simulation would see it.
