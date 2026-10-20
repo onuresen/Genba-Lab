@@ -45,7 +45,7 @@ export default function App() {
   const [sectionCutActive, setSectionCutActive] = useState(false)
   const [sectionCutY, setSectionCutY] = useState(3.5)
 
-  const [envSettings, setEnvSettings] = useState({ grass: true, time: 12, clouds: false, stars: false, kenGrid: false })
+  const [envSettings, setEnvSettings] = useState({ grass: true, time: 14, clouds: false, stars: false, kenGrid: false, shadows: true, edges: true })
 
   const [factoryMode, setFactoryMode] = useState(false)
 
@@ -558,9 +558,10 @@ export default function App() {
         fireMode={fireMode}
         fireState={fireState}
         fireIntensity={fireIntensity}
-        onIgnite={handleIgnite}
+        onFireClick={handleIgnite}
         showFireCompartments={showFireCompartments}
-        selectedVariants={selectedVariants}
+        selectedId={selected?.id ?? null}
+        darkMode={darkMode}
         onRendererReady={gl => { rendererRef.current = gl }}
         cinematicMode={cinematicMode}
         onCinematicEnd={() => setCinematicMode(false)}

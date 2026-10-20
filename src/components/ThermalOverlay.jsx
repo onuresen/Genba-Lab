@@ -1,8 +1,16 @@
-import { useMemo, useRef } from 'react'
+import { useLayoutEffect, useMemo, useRef } from 'react'
 import { Html } from '@react-three/drei'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 import { inferThermalConductivity, thermalColor } from '../utils/materialMetrics'
+
+// Labels only for the worst bridges: every <Html> reprojects each frame, and
+// a 100-node cloud of labels is unreadable anyway.
+const LABEL_LIMIT = 8
+const SPHERE = new THREE.SphereGeometry(1, 20, 14)
+const RING = new THREE.TorusGeometry(1.7, 0.08, 8, 36)
+const tmp = new THREE.Object3D()
+const tmpColor = new THREE.Color()
 
 function midPoint(a, b) {
   return [
@@ -12,43 +20,13 @@ function midPoint(a, b) {
   ]
 }
 
-function ThermalNode({ item }) {
-  const ref = useRef()
+// One node per visible connection, at its midpoint, coloured by the worse λ.
+// Spheres and rings are two instanced meshes (was 2 meshes + 1 label per node).
+export default function ThermalOverlay({ parts, visible, selectedVariants, frame }) {
+  const sphereRef = useRef()
+  const ringRef = useRef()
+  const unit = Math.max(1, (frame?.radius ?? 4) / 4.5)
 
-  useFrame(({ clock }) => {
-    if (!ref.current) return
-    const pulse = 1 + Math.sin(clock.elapsedTime * 3.2 + item.phase) * 0.18
-    ref.current.scale.setScalar(pulse)
-  })
-
-  return (
-    <group position={item.position}>
-      <mesh ref={ref}>
-        <sphereGeometry args={[item.radius, 20, 20]} />
-        <meshStandardMaterial
-          color={item.color}
-          emissive={item.color}
-          emissiveIntensity={0.75}
-          transparent
-          opacity={0.82}
-          depthWrite={false}
-        />
-      </mesh>
-      <mesh rotation={[Math.PI / 2, 0, 0]}>
-        <torusGeometry args={[item.radius * 1.7, 0.018, 8, 36]} />
-        <meshBasicMaterial color={item.color} transparent opacity={0.55} />
-      </mesh>
-      <Html position={[0, item.radius + 0.18, 0]} center distanceFactor={9} style={{ pointerEvents: 'none' }}>
-        <div className="thermal-label">
-          <span>{item.risk}</span>
-          {item.conductivity.toFixed(item.conductivity >= 10 ? 0 : 2)} W/mK
-        </div>
-      </Html>
-    </group>
-  )
-}
-
-export default function ThermalOverlay({ parts, visible, selectedVariants }) {
   const nodes = useMemo(() => {
     if (!parts) return []
     const byId = new Map(parts.map(part => [part.id, part]))
@@ -72,20 +50,71 @@ export default function ThermalOverlay({ parts, visible, selectedVariants }) {
 
         return [{
           key,
-          position: [center[0], center[1] + 0.18, center[2]],
+          position: [center[0], center[1] + 0.18 * unit, center[2]],
           conductivity,
           color,
           risk,
           phase: idx + partA.sequence * 0.7,
-          radius: Math.max(0.09, Math.min(0.22, 0.08 + Math.log10(Math.max(conductivity, 0.05) + 1) * 0.055)),
+          radius: unit * Math.max(0.09, Math.min(0.22, 0.08 + Math.log10(Math.max(conductivity, 0.05) + 1) * 0.055)),
         }]
       })
     })
-  }, [parts, visible, selectedVariants])
+  }, [parts, visible, selectedVariants, unit])
+
+  const labelled = useMemo(
+    () => [...nodes].sort((a, b) => b.conductivity - a.conductivity).slice(0, LABEL_LIMIT),
+    [nodes]
+  )
+
+  useLayoutEffect(() => {
+    nodes.forEach((n, i) => {
+      tmpColor.set(n.color)
+      sphereRef.current?.setColorAt(i, tmpColor)
+      ringRef.current?.setColorAt(i, tmpColor)
+      tmp.position.set(...n.position)
+      tmp.rotation.set(Math.PI / 2, 0, 0)
+      tmp.scale.setScalar(n.radius)
+      tmp.updateMatrix()
+      ringRef.current?.setMatrixAt(i, tmp.matrix)
+    })
+    for (const ref of [sphereRef, ringRef]) {
+      if (!ref.current) continue
+      ref.current.instanceMatrix.needsUpdate = true
+      if (ref.current.instanceColor) ref.current.instanceColor.needsUpdate = true
+    }
+  }, [nodes])
+
+  useFrame(({ clock }) => {
+    const mesh = sphereRef.current
+    if (!mesh) return
+    nodes.forEach((n, i) => {
+      tmp.position.set(...n.position)
+      tmp.rotation.set(0, 0, 0)
+      tmp.scale.setScalar(n.radius * (1 + Math.sin(clock.elapsedTime * 3.2 + n.phase) * 0.18))
+      tmp.updateMatrix()
+      mesh.setMatrixAt(i, tmp.matrix)
+    })
+    mesh.instanceMatrix.needsUpdate = true
+  })
+
+  if (!nodes.length) return null
 
   return (
     <group>
-      {nodes.map(item => <ThermalNode key={item.key} item={item} />)}
+      <instancedMesh key={`s${nodes.length}`} ref={sphereRef} args={[SPHERE, null, nodes.length]} frustumCulled={false}>
+        <meshBasicMaterial transparent opacity={0.85} depthWrite={false} />
+      </instancedMesh>
+      <instancedMesh key={`r${nodes.length}`} ref={ringRef} args={[RING, null, nodes.length]} frustumCulled={false}>
+        <meshBasicMaterial transparent opacity={0.55} depthWrite={false} />
+      </instancedMesh>
+      {labelled.map(item => (
+        <Html key={item.key} position={[item.position[0], item.position[1] + item.radius + 0.18 * unit, item.position[2]]} center style={{ pointerEvents: 'none' }}>
+          <div className="thermal-label">
+            <span>{item.risk}</span>
+            {item.conductivity.toFixed(item.conductivity >= 10 ? 0 : 2)} W/mK
+          </div>
+        </Html>
+      ))}
     </group>
   )
 }
