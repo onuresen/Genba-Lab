@@ -188,7 +188,22 @@ Real models are 20–100 m, not the 5 m Kit-of-Parts kit. Never hard-code world 
 
 ---
 
+## 2026-10-20 improvement pass (summary)
+
+- **New files:** `StartScreen.jsx` (sample + open + drop), `DropOverlay.jsx`, `SequencePlayer.jsx` (build player + video), `Celebration.jsx` (result moments), `utils/useIfcImport.js`, `utils/edges.js` (cached GL-line outlines), `utils/shadowSync.js`, `utils/sun.js`, `utils/fireSim.js`, `utils/seismic.js`, `utils/videoRecorder.js`, `utils/connectionTypes.js`, `scripts/make-sample-ifc.mjs` → `public/samples/genba-sample-office.ifc` (`npm run sample:ifc`).
+- **New App state:** `seqPlaying`, `seqSpeed`, `recording`, `celebration`; `envSettings.shadows`, `envSettings.edges`. Fire status adds `'out'` (put out by a click).
+- **Keys:** B build, Space/←/→ in build, C crane, Q quake, W wind, R rain, I fire, T thermal, A acoustics, P plan (plus the old ones).
+- **Render:** no drei `<Edges>` (fat lines) on parts; no HDR download (in-scene Lightformers); sun shadows re-render only when something moves (`markShadowsDirty`). `recording` is a continuous-render reason.
+
 ## Key decisions
+
+- **Decision:** Fire spreads one neighbour per tick with longer delays (non-rated 2.5 s / fail 9 s, 1hr 6 s / 22 s); clicking a burning part puts it out.
+  - **Why:** the old rules burned a whole house in 4 s: nothing to see or play.
+  - **Alternative:** keep old timings. Rejected: no time to react.
+  - **Confidence:** med (indicative only)
+- **Decision:** Earthquake verdict checks primary structure only (`utils/seismic.js`).
+  - **Why:** IFC windows/doors have no structural role and counted as primary, so most models "failed" above M3.
+  - **Confidence:** high
 
 - **Decision:** Consume the exact pinned OpenBIM Core package and keep Genba's simulation projection local.
   - **Why:** CDI and Genba can improve one source-faithful IFC parser without sharing viewers, product state or simulation assumptions.
@@ -235,7 +250,7 @@ Real models are 20–100 m, not the 5 m Kit-of-Parts kit. Never hard-code world 
 
 Build it
 1. Construction timeline scrubber (day-by-day build, crews, crane lifts).
-2. Time-lapse video recording (MediaRecorder on the canvas + demo tour).
+2. ~~Time-lapse video recording~~ ✅ shipped as the build player's Video button.
 3. Site logistics (deliveries in sequence order, laydown areas, crane reach).
 
 Stress it
