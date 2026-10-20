@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { Play, Pause, SkipBack, ChevronLeft, ChevronRight, X } from 'lucide-react'
+import { Play, Pause, SkipBack, ChevronLeft, ChevronRight, X, Video, Square } from 'lucide-react'
 
 const PLAYER_SPEEDS = [1, 2, 4]
 
@@ -8,6 +8,7 @@ const PLAYER_SPEEDS = [1, 2, 4]
 export default function SequencePlayer({
   parts, step, maxStep, playing, speed,
   onTogglePlay, onStep, onSeek, onSpeed, onExit,
+  recording, onToggleRecord,
 }) {
   const sorted = useMemo(
     () => [...(parts ?? [])].sort((a, b) => (a.sequence ?? 99) - (b.sequence ?? 99)),
@@ -83,6 +84,15 @@ export default function SequencePlayer({
         </div>
       </div>
 
+      <button
+        className={`seq-player__rec${recording ? ' is-recording' : ''}`}
+        onClick={onToggleRecord}
+        title={recording ? 'Stop and save the video' : 'Record the build as a video (orbiting camera, no UI)'}
+        aria-label={recording ? 'Stop recording' : 'Record video'}
+      >
+        {recording ? <Square size={11} /> : <Video size={14} />}
+        <span>{recording ? 'REC' : 'Video'}</span>
+      </button>
       <div className="seq-player__speed" role="group" aria-label="Speed">
         {PLAYER_SPEEDS.map(s => (
           <button key={s} className={speed === s ? 'is-active' : ''} onClick={() => onSpeed(s)}>{s}×</button>

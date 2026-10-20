@@ -52,3 +52,7 @@ test('hidden regular-view effects do not animate in factory mode', () => {
     }), [])
   }
 })
+
+test('recording a build video keeps frames coming', () => {
+  assert.deepEqual(getContinuousRenderReasons({ recording: true }), ['recording'])
+})

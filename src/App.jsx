@@ -20,6 +20,7 @@ import { computeCraneLayout, partBounds } from './utils/craneLayout'
 import { estimateFloorArea } from './utils/modelMetrics'
 import { fireGradeOf, fireRoundResult, spreadFire } from './utils/fireSim'
 import { getSeismicScore, getVerdict, seismicParts } from './utils/seismic'
+import { canRecord, startCanvasRecording } from './utils/videoRecorder'
 import './App.css'
 
 // Build playback: 1× places the whole model in about 45 s, whatever its size.
@@ -190,10 +191,45 @@ export default function App() {
     return () => clearTimeout(id)
   }, [sequenceMode, seqPlaying, sequenceStep, seqSpeed, maxStep, goToStep, cinematicMode])
 
+  // ── Build video: record the canvas while the build plays ──
+  const [recording, setRecording] = useState(false)
+  const recorderRef = useRef(null)
+
+  const stopRecording = useCallback(async () => {
+    const rec = recorderRef.current
+    if (!rec) return
+    recorderRef.current = null
+    setRecording(false)
+    const { fileName } = await rec.stop()
+    celebrate({ title: 'Video saved', subtitle: `${fileName} · ready to share`, tone: 'info' })
+  }, [celebrate])
+
+  function toggleRecording() {
+    if (recording) { stopRecording(); return }
+    const canvas = rendererRef.current?.domElement
+    if (!canRecord(canvas)) {
+      celebrate({ title: 'Recording not supported here', subtitle: 'Try Chrome, Edge or Firefox.', tone: 'warn' })
+      return
+    }
+    recorderRef.current = startCanvasRecording(canvas)
+    setRecording(true)
+    setSelected(null)
+    setSequenceStep(0)
+    setSeqPlaying(true)
+  }
+
+  // Stop a moment after the last part lands, so the video ends on the full building.
+  useEffect(() => {
+    if (!recording || sequenceStep < maxStep) return
+    const id = setTimeout(stopRecording, 2500)
+    return () => clearTimeout(id)
+  }, [recording, sequenceStep, maxStep, stopRecording])
+
   function toggleSequenceMode() {
     setExploded(false)
     setSequenceStep(0)
     if (sequenceMode) {
+      if (recording) stopRecording()
       setSequenceMode(false)
       setSeqPlaying(false)
     } else {
@@ -701,6 +737,7 @@ export default function App() {
         showFireCompartments={showFireCompartments}
         selectedId={selected?.id ?? null}
         darkMode={darkMode}
+        recording={recording}
         onRendererReady={gl => { rendererRef.current = gl }}
         cinematicMode={cinematicMode}
         onCinematicEnd={() => setCinematicMode(false)}
@@ -737,6 +774,8 @@ export default function App() {
           onSeek={seekSequence}
           onSpeed={setSeqSpeed}
           onExit={toggleSequenceMode}
+          recording={recording}
+          onToggleRecord={toggleRecording}
         />
       )}
 

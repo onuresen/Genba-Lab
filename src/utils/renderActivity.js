@@ -11,9 +11,12 @@ export function getContinuousRenderReasons({
   showWindArrows = false,
   fireState = {},
   isShaking = false,
+  recording = false,
   envSettings,
 } = {}) {
   const reasons = []
+  // A video needs a steady frame stream (and the camera orbits while recording).
+  if (recording) reasons.push('recording')
   if (factoryMode) return reasons
   if (showWaterSim) reasons.push('water-simulation')
   if (showThermal) reasons.push('thermal-overlay')

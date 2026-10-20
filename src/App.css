@@ -2920,6 +2920,30 @@
 .seq-player__speed button:hover { color: #2c3e50; }
 .seq-player__speed button.is-active { background: #f1f4f6; border-color: #e3e8ec; color: #2c3e50; }
 .seq-player__close { margin-left: -6px; }
+.seq-player__rec {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  padding: 5px 9px;
+  border: 1px solid #e3e8ec;
+  border-radius: 999px;
+  background: #fff;
+  color: #5d6d7e;
+  cursor: pointer;
+  font-family: 'Segoe UI', sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+}
+.seq-player__rec:hover { border-color: #e74c3c; color: #e74c3c; }
+.seq-player__rec.is-recording {
+  border-color: #e74c3c;
+  background: #e74c3c;
+  color: #fff;
+  animation: rec-pulse 1.2s ease-in-out infinite;
+}
+@keyframes rec-pulse { 50% { box-shadow: 0 0 0 5px rgba(231, 76, 60, 0.2); } }
+[data-theme="dark"] .seq-player__rec:not(.is-recording) { background: #252d3a; border-color: #2d3848; color: #95a5a6; }
 [data-theme="dark"] .seq-player { background: rgba(30, 37, 48, 0.97); box-shadow: 0 6px 26px rgba(0, 0, 0, 0.45); }
 [data-theme="dark"] .seq-player__label strong { color: #ecf0f1; }
 [data-theme="dark"] .seq-player__track::before { background: #2d3848; }
@@ -2953,6 +2977,7 @@
   animation: celebrate-pop 0.5s cubic-bezier(0.2, 1.4, 0.4, 1) both, celebrate-out 0.5s ease-in 3.5s forwards;
 }
 .celebration--warn .celebration__card { border-top-color: #f39c12; }
+.celebration--info .celebration__card { border-top-color: #3498db; }
 .celebration--fail .celebration__card { border-top-color: #e74c3c; animation: celebrate-pop 0.5s cubic-bezier(0.2, 1.4, 0.4, 1) both, celebrate-shake 0.5s ease-in-out 0.5s, celebrate-out 0.5s ease-in 3s forwards; }
 .celebration__title { font-size: 24px; font-weight: 800; color: #2c3e50; letter-spacing: -0.01em; }
 .celebration__subtitle { margin-top: 4px; font-size: 13px; color: #5d6d7e; }
@@ -3224,7 +3249,8 @@
     animation: none;
   }
   .seq-player__speed,
-  .seq-player__storeys { display: none; }
+  .seq-player__storeys,
+  .seq-player__rec span { display: none; }
   .shortcuts-grid { grid-template-columns: 1fr; }
 
   /* Hide EXPLODE/ASSEMBLE text label — keep the icon */

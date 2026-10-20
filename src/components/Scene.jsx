@@ -283,6 +283,7 @@ export default function Scene({
   onFireClick,
   showFireCompartments,
   darkMode,
+  recording,
 }) {
   const controlsRef = useRef()
   const { parts } = useKit()
@@ -313,6 +314,7 @@ export default function Scene({
     showWindArrows,
     fireState,
     isShaking,
+    recording,
     envSettings,
   })
   const continuousActive = continuousReasons.length > 0
@@ -342,7 +344,7 @@ export default function Scene({
       onCreated={({ gl }) => onRendererReady?.(gl)}
     >
       <PerspectiveCamera makeDefault position={[8, 8, 8]} fov={45} near={0.1} far={Math.max(2000, groundRadius * 3)} />
-      <OrbitControls ref={controlsRef} makeDefault enableDamping />
+      <OrbitControls ref={controlsRef} makeDefault enableDamping autoRotate={!!recording} autoRotateSpeed={0.6} />
       <GsapBridge />
       <ShadowSync />
       {diagnosticsEnabled && <RenderDiagnostics continuousReasons={continuousReasons} />}
