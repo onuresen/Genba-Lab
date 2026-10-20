@@ -1,16 +1,8 @@
-import { useState, useEffect, useRef, useMemo } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Html, Line } from '@react-three/drei'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
-
-export const TYPE_COLOR = {
-  'dry-fit':       '#27ae60',
-  'bolted':        '#e67e22',
-  'welded':        '#e74c3c',
-  'adhesive':      '#3498db',
-  'damper':        '#9b59b6',
-  'base-isolation':'#1abc9c',
-}
+import { TYPE_COLOR } from '../utils/connectionTypes'
 
 const TENSION_COLOR = '#e74c3c'
 const ANIM_MS = 1000
@@ -49,10 +41,11 @@ export default function Connection({ partA, partB, connection, isExploded, compa
 
   const typeColor = TYPE_COLOR[connection.type] ?? '#95a5a6'
 
-  const aA = useMemo(() => partA.pos, [])
-  const aB = useMemo(() => partB.pos, [])
-  const eA = useMemo(() => partA.exp, [])
-  const eB = useMemo(() => partB.exp, [])
+  // End points are fixed when the line mounts.
+  const [aA] = useState(partA.pos)
+  const [aB] = useState(partB.pos)
+  const [eA] = useState(partA.exp)
+  const [eB] = useState(partB.exp)
 
   const lower  = aA[1] <= aB[1] ? partA : partB
   const lowerE = eA[1] <= eB[1] ? partA : partB
@@ -61,8 +54,8 @@ export default function Connection({ partA, partB, connection, isExploded, compa
   const dotXa  = (aA[0] + aB[0]) / 2,  dotZa = (aA[2] + aB[2]) / 2
   const dotXe  = (eA[0] + eB[0]) / 2,  dotZe = (eA[2] + eB[2]) / 2
 
-  const midA = useMemo(() => lerp3(aA, aB, 0.5), [])
-  const midE = useMemo(() => lerp3(eA, eB, 0.5), [])
+  const midA = lerp3(aA, aB, 0.5)
+  const midE = lerp3(eA, eB, 0.5)
 
   // Animate progress ref on isExploded change
   useEffect(() => {

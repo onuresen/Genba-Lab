@@ -1,10 +1,58 @@
+import { useRef, useState } from 'react'
 import {
   MousePointer2, Scissors,
   Ruler, Link2, BarChart3, Undo2, Redo2, Layers, Zap,
-  Moon, Sun, Keyboard, HardHat, Clapperboard, Camera, Activity, Wind, LayoutTemplate,
-  Droplets, Menu, X, Flame, Shield, Thermometer, Volume2, Factory
+  Clapperboard, Activity, Wind, LayoutTemplate,
+  Droplets, Menu, X, Flame, Shield, Thermometer, Volume2, Factory, HardHat,
 } from 'lucide-react'
 import ShareButton from './ShareButton'
+
+// Fast tooltip under the toolbar: name, one short hint, shortcut key.
+// Rendered outside the (scrollable) toolbar so it is never clipped.
+function useTooltip() {
+  const [tip, setTip] = useState(null)
+  const timer = useRef(null)
+  function show(e, info) {
+    const rect = e.currentTarget.getBoundingClientRect()
+    clearTimeout(timer.current)
+    timer.current = setTimeout(() => setTip({ ...info, x: rect.left + rect.width / 2, y: rect.bottom + 8 }), 120)
+  }
+  function hide() {
+    clearTimeout(timer.current)
+    setTip(null)
+  }
+  return { tip, show, hide }
+}
+
+function ToolButton({ icon, label, hint, keyName, active, disabled, onClick, tooltip, danger, text }) {
+  const Icon = icon
+  return (
+    <button
+      className={`tb-btn${text ? ' tb-btn--text' : ''}${active ? ' tb-btn--active' : ''}${danger && active ? ' tb-btn--danger' : ''}`}
+      aria-label={keyName ? `${label} (${keyName})` : label}
+      aria-pressed={active ?? undefined}
+      onClick={onClick}
+      disabled={disabled}
+      onMouseEnter={e => tooltip.show(e, { label, hint, keyName })}
+      onMouseLeave={tooltip.hide}
+      onMouseDown={e => { e.preventDefault(); tooltip.hide() }}
+      onFocus={e => tooltip.show(e, { label, hint, keyName })}
+      onBlur={tooltip.hide}
+    >
+      <Icon size={text ? 13 : 15} />
+      {text}
+    </button>
+  )
+}
+
+function Group({ label, children }) {
+  return (
+    <div className="toolbar-group" role="group" aria-label={label}>
+      <span className="toolbar-group__label" aria-hidden="true">{label}</span>
+      <div className="toolbar-group__buttons">{children}</div>
+    </div>
+  )
+}
 
 export default function Toolbar({
   exploded, onToggleExplode,
@@ -14,7 +62,6 @@ export default function Toolbar({
   showMetrics, onToggleMetrics,
   factoryMode, onToggleFactoryMode,
   sequenceMode, onToggleSequence,
-  darkMode, onToggleDark, onToggleShortcuts,
   onUndo, onRedo, canUndo, canRedo,
   showCrane, onToggleCrane,
   onShare, shareMetrics,
@@ -29,6 +76,7 @@ export default function Toolbar({
   showFireCompartments, onToggleFireCompartments,
   mobileSidebarOpen, onToggleMobileSidebar,
 }) {
+  const tooltip = useTooltip()
   const isSelectMode = !factoryMode && !sequenceMode
 
   function handleSelectMode() {
@@ -36,218 +84,74 @@ export default function Toolbar({
     if (sequenceMode) onToggleSequence()
   }
 
+  const t = { tooltip }
+
   return (
-    <div className="toolbar">
-
-      <button
-        className={`tb-btn tb-btn--mobile-only ${mobileSidebarOpen ? 'tb-btn--active' : ''}`}
-        title="Layers"
-        onClick={onToggleMobileSidebar}
-      >
-        {mobileSidebarOpen ? <X size={15} /> : <Menu size={15} />}
-      </button>
-      <div className="toolbar-sep tb-sep--mobile-only" />
-
-      <div className="toolbar-group">
+    <>
+      <div className="toolbar" onMouseLeave={tooltip.hide}>
         <button
-          className={`tb-btn ${isSelectMode ? 'tb-btn--active' : ''}`}
-          title="Select"
-          onClick={handleSelectMode}
+          className={`tb-btn tb-btn--mobile-only ${mobileSidebarOpen ? 'tb-btn--active' : ''}`}
+          aria-label="Layers"
+          onClick={onToggleMobileSidebar}
         >
-          <MousePointer2 size={15} />
+          {mobileSidebarOpen ? <X size={15} /> : <Menu size={15} />}
         </button>
-        <button
-          className={`tb-btn ${sectionCutActive ? 'tb-btn--active' : ''}`}
-          title="Section Cut"
-          onClick={onToggleSectionCut}
-          disabled={factoryMode}
-        >
-          <Scissors size={15} />
-        </button>
+        <div className="toolbar-sep tb-sep--mobile-only" />
+
+        <Group label="View">
+          <ToolButton {...t} icon={MousePointer2} label="Select" hint="Click a part to inspect it" keyName="S" active={isSelectMode} onClick={handleSelectMode} />
+          <ToolButton {...t} icon={Scissors} label="Section cut" hint="Slice the model at a height" keyName="X" active={sectionCutActive} onClick={onToggleSectionCut} disabled={factoryMode} />
+          <ToolButton {...t} icon={Ruler} label="Dimensions" hint="Overall width, depth and height" keyName="D" active={showDimensions} onClick={onToggleDimensions} disabled={factoryMode} />
+          <ToolButton {...t} icon={Link2} label="Connections" hint="Lines between touching parts" keyName="L" active={showConnections} onClick={onToggleConnections} disabled={factoryMode} />
+          <ToolButton {...t} icon={LayoutTemplate} label="Floor plan" hint="2D plan, SVG export" keyName="P" onClick={onShowFloorPlan} disabled={factoryMode} />
+        </Group>
+
+        <div className="toolbar-sep" />
+
+        <Group label="Build">
+          <ToolButton {...t} icon={Layers} label="Build sequence" hint="Watch the model go up, part by part" keyName="B" active={sequenceMode} onClick={onToggleSequence} disabled={factoryMode} />
+          <ToolButton {...t} icon={HardHat} label="Tower crane" hint="Crane sized to the model, lift checks" keyName="C" active={showCrane} onClick={onToggleCrane} disabled={factoryMode} />
+          <ToolButton {...t} icon={Factory} label="Factory layout" hint="Parts by production bay" keyName="F" active={factoryMode} onClick={onToggleFactoryMode} disabled={sequenceMode} />
+        </Group>
+
+        <div className="toolbar-sep" />
+
+        <Group label="Simulate">
+          <ToolButton {...t} icon={Activity} label="Earthquake" hint="Shake the model by magnitude" keyName="Q" active={showEarthquake} onClick={onToggleEarthquake} disabled={factoryMode} />
+          <ToolButton {...t} icon={Wind} label="Wind" hint="Pressure arrows and streamlines" keyName="W" active={showWindArrows} onClick={onToggleWindArrows} disabled={factoryMode} />
+          <ToolButton {...t} icon={Droplets} label="Rain" hint="Rain and driving-rain pressure" keyName="R" active={showWaterSim} onClick={onToggleWaterSim} disabled={factoryMode} />
+          <ToolButton {...t} icon={Flame} label="Fire" hint="Start a fire, then put it out" keyName="I" active={fireMode} danger onClick={onToggleFireMode} disabled={factoryMode} />
+          <ToolButton {...t} icon={Shield} label="Fire compartments" hint="Storeys vs the 500 m² limit" active={showFireCompartments} onClick={onToggleFireCompartments} disabled={factoryMode} />
+        </Group>
+
+        <div className="toolbar-sep" />
+
+        <Group label="Analyze">
+          <ToolButton {...t} icon={Thermometer} label="Thermal bridges" hint="Heat loss at joints" keyName="T" active={showThermal} onClick={onToggleThermal} disabled={factoryMode} />
+          <ToolButton {...t} icon={Volume2} label="Acoustics" hint="Sound insulation by part" keyName="A" active={showAcoustic} onClick={onToggleAcoustic} disabled={factoryMode} />
+          <ToolButton {...t} icon={BarChart3} label="Metrics" hint="Cost, carbon, BOM, schedule" keyName="M" active={showMetrics} onClick={onToggleMetrics} />
+        </Group>
+
+        <div className="toolbar-sep" />
+
+        <Group label="Show">
+          <ToolButton {...t} icon={Zap} text={exploded ? 'ASSEMBLE' : 'EXPLODE'} label={exploded ? 'Assemble' : 'Explode'} hint="Pull the parts apart" keyName="E" active={exploded} onClick={onToggleExplode} disabled={sequenceMode || factoryMode} />
+          <ToolButton {...t} icon={Clapperboard} label="Demo tour" hint="A short guided camera tour" active={cinematicMode} onClick={onToggleCinematic} disabled={factoryMode} />
+          <ShareButton shareMetrics={shareMetrics} onShare={onShare} tooltip={tooltip} />
+          <ToolButton {...t} icon={Undo2} label="Undo" hint="Factory order and connection edits" keyName="Ctrl+Z" onClick={onUndo} disabled={!canUndo} />
+          <ToolButton {...t} icon={Redo2} label="Redo" keyName="Ctrl+Y" onClick={onRedo} disabled={!canRedo} />
+        </Group>
       </div>
 
-      <div className="toolbar-sep" />
-
-      <div className="toolbar-group">
-        <button
-          className={`tb-btn ${showDimensions ? 'tb-btn--active' : ''}`}
-          title="Dimension Overlay"
-          onClick={onToggleDimensions}
-          disabled={factoryMode}
-        >
-          <Ruler size={15} />
-        </button>
-        <button
-          className={`tb-btn ${showConnections ? 'tb-btn--active' : ''}`}
-          title="Connection lines (L)"
-          onClick={onToggleConnections}
-          disabled={factoryMode}
-        >
-          <Link2 size={15} />
-        </button>
-        <button
-          className={`tb-btn ${showMetrics ? 'tb-btn--active' : ''}`}
-          title="Metrics (Cost · Carbon · BOM)"
-          onClick={onToggleMetrics}
-        >
-          <BarChart3 size={15} />
-        </button>
-        <button
-          className={`tb-btn ${factoryMode ? 'tb-btn--active' : ''}`}
-          title="Prefab Factory Layout"
-          onClick={onToggleFactoryMode}
-          disabled={sequenceMode}
-        >
-          <Factory size={15} />
-        </button>
-        <button
-          className={`tb-btn ${sequenceMode ? 'tb-btn--active' : ''}`}
-          title="Assembly Sequence"
-          onClick={onToggleSequence}
-          disabled={factoryMode}
-        >
-          <Layers size={15} />
-        </button>
-        <button
-          className={`tb-btn ${showCrane ? 'tb-btn--active' : ''}`}
-          title="Tower Crane"
-          onClick={onToggleCrane}
-          disabled={factoryMode}
-        >
-          <HardHat size={15} />
-        </button>
-        <button
-          className={`tb-btn ${showEarthquake ? 'tb-btn--active' : ''}`}
-          title="Earthquake Simulation"
-          onClick={onToggleEarthquake}
-          disabled={factoryMode}
-        >
-          <Activity size={15} />
-        </button>
-        <button
-          className={`tb-btn ${showWindArrows ? 'tb-btn--active' : ''}`}
-          title="Wind Load Arrows"
-          onClick={onToggleWindArrows}
-          disabled={factoryMode}
-        >
-          <Wind size={15} />
-        </button>
-        <button
-          className={`tb-btn ${showWaterSim ? 'tb-btn--active' : ''}`}
-          title="Water Analysis"
-          onClick={onToggleWaterSim}
-          disabled={factoryMode}
-        >
-          <Droplets size={15} />
-        </button>
-        <button
-          className={`tb-btn ${showThermal ? 'tb-btn--active' : ''}`}
-          title="Thermal Bridge Visualizer"
-          onClick={onToggleThermal}
-          disabled={factoryMode}
-        >
-          <Thermometer size={15} />
-        </button>
-        <button
-          className={`tb-btn ${showAcoustic ? 'tb-btn--active' : ''}`}
-          title="Acoustic Performance Overlay"
-          onClick={onToggleAcoustic}
-          disabled={factoryMode}
-        >
-          <Volume2 size={15} />
-        </button>
-        <button
-          className="tb-btn"
-          title="Floor Plan"
-          onClick={onShowFloorPlan}
-          disabled={factoryMode}
-        >
-          <LayoutTemplate size={15} />
-        </button>
-        <button
-          className={`tb-btn ${fireMode ? 'tb-btn--active' : ''}`}
-          title="Fire Spread Simulation"
-          onClick={onToggleFireMode}
-          disabled={factoryMode}
-          style={fireMode ? { color: '#e74c3c' } : {}}
-        >
-          <Flame size={15} />
-        </button>
-        <button
-          className={`tb-btn ${showFireCompartments ? 'tb-btn--active' : ''}`}
-          title="Fire Compartment Visualizer"
-          onClick={onToggleFireCompartments}
-          disabled={factoryMode}
-        >
-          <Shield size={15} />
-        </button>
-      </div>
-
-      <div className="toolbar-sep" />
-
-      <div className="toolbar-group">
-        <button className="tb-btn" title="Undo (Ctrl+Z)" onClick={onUndo} disabled={!canUndo}>
-          <Undo2 size={15} />
-        </button>
-        <button className="tb-btn" title="Redo (Ctrl+Y)" onClick={onRedo} disabled={!canRedo}>
-          <Redo2 size={15} />
-        </button>
-      </div>
-
-      <div className="toolbar-sep" />
-
-      <div className="toolbar-group">
-        <button
-          className={`tb-btn tb-btn--text ${exploded ? 'tb-btn--active' : ''}`}
-          title="Explode / Assemble"
-          onClick={onToggleExplode}
-          disabled={sequenceMode || factoryMode}
-        >
-          <Zap size={13} />
-          {exploded ? 'ASSEMBLE' : 'EXPLODE'}
-        </button>
-      </div>
-
-      <div className="toolbar-sep" />
-
-
-      <div className="toolbar-group">
-        <button
-          className={`tb-btn tb-btn--text ${cinematicMode ? 'tb-btn--active' : ''}`}
-          title="Cinematic demo tour"
-          onClick={onToggleCinematic}
-          disabled={factoryMode}
-        >
-          <Clapperboard size={13} />
-          DEMO
-        </button>
-      </div>
-
-      <div className="toolbar-sep" />
-
-      <div className="toolbar-group">
-        <ShareButton shareMetrics={shareMetrics} onShare={onShare} />
-      </div>
-
-      <div className="toolbar-sep" />
-
-      <div className="toolbar-group">
-        <button
-          className="tb-btn"
-          title={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
-          onClick={onToggleDark}
-        >
-          {darkMode ? <Sun size={15} /> : <Moon size={15} />}
-        </button>
-        <button
-          className="tb-btn"
-          title="Keyboard shortcuts (?)"
-          onClick={onToggleShortcuts}
-        >
-          <Keyboard size={15} />
-        </button>
-      </div>
-
-    </div>
+      {tooltip.tip && (
+        <div className="tb-tooltip" style={{ left: tooltip.tip.x, top: tooltip.tip.y }} role="tooltip">
+          <div className="tb-tooltip__title">
+            {tooltip.tip.label}
+            {tooltip.tip.keyName && <kbd>{tooltip.tip.keyName}</kbd>}
+          </div>
+          {tooltip.tip.hint && <div className="tb-tooltip__hint">{tooltip.tip.hint}</div>}
+        </div>
+      )}
+    </>
   )
 }

@@ -1,7 +1,10 @@
 import { useKit } from './KitContext'
+import { countFire, fireGradeOf, fireRoundResult } from '../utils/fireSim'
 
-const FIRE_COLORS = { ok: '#27ae60', burning: '#e67e22', failed: '#7f1f1f' }
-const FIRE_LABELS = { ok: 'OK', burning: '🔥 Burning', failed: '💀 Failed' }
+const FIRE_COLORS = { ok: '#27ae60', burning: '#e67e22', failed: '#7f1f1f', out: '#2e86de' }
+const FIRE_LABELS = { burning: '🔥 Burning', failed: '💀 Lost', out: '💧 Out' }
+const ORDER = { burning: 0, failed: 1, out: 2 }
+const LIST_LIMIT = 12
 
 function fmt(s) {
   const m = Math.floor(s / 60)
@@ -15,15 +18,17 @@ export default function FirePanel({
   const { parts } = useKit()
   if (!parts) return null
 
-  const burning = Object.values(fireState).filter(s => s === 'burning').length
-  const failed  = Object.values(fireState).filter(s => s === 'failed').length
-  const anyFire = burning + failed > 0
-  const damagePct = parts.length > 0 ? Math.round(((burning * 0.6 + failed) / parts.length) * 100) : 0
+  const { burning, failed, out } = countFire(fireState)
+  const anyFire = burning + failed + out > 0
+  const result = fireRoundResult(fireState, parts.length, fireElapsed)
+  const affected = parts
+    .filter(p => fireState[p.id] && fireState[p.id] !== 'ok')
+    .sort((a, b) => ORDER[fireState[a.id]] - ORDER[fireState[b.id]])
 
   return (
     <div
       className="metrics-panel fire-sim-panel"
-      style={{ right: 280, bottom: 20, left: 'auto', top: 'auto', width: 260, maxHeight: '70vh', overflow: 'auto', position: 'fixed' }}
+      style={{ right: 304, bottom: 20, left: 'auto', top: 'auto', width: 270, maxHeight: '70vh', overflow: 'auto', position: 'fixed' }}
     >
       <div className="metrics-header" style={{ padding: '10px 14px 0' }}>
         <div style={{ fontWeight: 700, fontSize: 12, letterSpacing: '0.06em', textTransform: 'uppercase', color: '#e74c3c' }}>
@@ -31,13 +36,29 @@ export default function FirePanel({
         </div>
       </div>
 
-      {/* Timer + stats */}
       <div className="ipr-section" style={{ padding: '10px 14px' }}>
-        <div className="fire-risk-meter">
-          <div className="fire-risk-meter__bar" style={{ width: `${Math.min(fireIntensity, 100)}%` }} />
+        <div className="fire-howto">
+          {burning > 0
+            ? <><strong>Put it out:</strong> click burning parts before the fire spreads.</>
+            : <><strong>Start:</strong> click any part, or use the button below.</>}
         </div>
+
+        <div className="fire-stats">
+          <div><strong style={{ color: '#e74c3c' }}>{fmt(fireElapsed)}</strong><span>time</span></div>
+          <div><strong style={{ color: '#e67e22' }}>{burning}</strong><span>burning</span></div>
+          <div><strong style={{ color: '#2e86de' }}>{out}</strong><span>put out</span></div>
+          <div><strong style={{ color: '#7f1f1f' }}>{failed}</strong><span>lost</span></div>
+        </div>
+
+        {result && (
+          <div className={`fire-result fire-result--${result.tone}`}>
+            <strong>{result.title}</strong>
+            <span>{result.subtitle}</span>
+          </div>
+        )}
+
         <div className="fire-risk-meter__label">
-          <span>Scenario intensity</span>
+          <span>Fire load</span>
           <strong>{fireIntensity}%</strong>
         </div>
         <input
@@ -48,74 +69,39 @@ export default function FirePanel({
           step="5"
           value={fireIntensity}
           onChange={e => onFireIntensity?.(Number(e.target.value))}
-          title="Adjust fire load and visual intensity"
+          title="Higher load: faster spread and failure"
+          aria-label="Fire load"
         />
-        <div className="fire-damage-readout">
-          Spread impact <strong>{damagePct}%</strong>
+
+        <div className="fire-actions">
+          <button className="fire-ignite-btn" onClick={onIgniteFirst}>
+            {anyFire ? 'Restart at the weakest part' : 'Start at the weakest part'}
+          </button>
+          {anyFire && (
+            <button className="fire-reset-btn" onClick={onExtinguish}>Reset</button>
+          )}
         </div>
-        <div style={{ display: 'flex', gap: 10, marginBottom: 6 }}>
-          <div style={{ flex: 1, textAlign: 'center' }}>
-            <div style={{ fontSize: 18, fontWeight: 700, color: '#e74c3c' }}>{fmt(fireElapsed)}</div>
-            <div style={{ fontSize: 10, color: '#888' }}>elapsed</div>
-          </div>
-          <div style={{ flex: 1, textAlign: 'center' }}>
-            <div style={{ fontSize: 18, fontWeight: 700, color: '#e67e22' }}>{burning}</div>
-            <div style={{ fontSize: 10, color: '#888' }}>burning</div>
-          </div>
-          <div style={{ flex: 1, textAlign: 'center' }}>
-            <div style={{ fontSize: 18, fontWeight: 700, color: '#7f1f1f' }}>{failed}</div>
-            <div style={{ fontSize: 10, color: '#888' }}>failed</div>
-          </div>
-        </div>
-        {!anyFire && (
-          <div style={{ fontSize: 11, color: '#aaa', fontStyle: 'italic', textAlign: 'center' }}>
-            Click a part in the 3D view to ignite it
-          </div>
-        )}
-        <button className="fire-ignite-btn" onClick={onIgniteFirst}>
-          Ignite Test Part
-        </button>
+        <div className="fire-rule">Non-rated parts spread fast, 1hr slowly, 2hr never.</div>
       </div>
 
-      {/* Parts list */}
-      <div className="ipr-section" style={{ padding: '0 14px 10px' }}>
-        <div className="ipr-section-label">Parts Status</div>
-        {parts.map(p => {
-          const status = fireState[p.id] ?? 'ok'
-          const varIdx = selectedVariants?.[p.id] ?? 0
-          const grade = p.variants[varIdx]?.fire_resistance_grade ?? 'non-rated'
-          return (
-            <div key={p.id} style={{
-              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-              padding: '3px 0', borderBottom: '1px solid #f0f0f0', fontSize: 11,
-            }}>
-              <span style={{ fontWeight: status !== 'ok' ? 700 : 400 }}>{p.id}</span>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span style={{ fontSize: 10, color: '#aaa' }}>{grade}</span>
-                <span style={{
-                  fontSize: 10, fontWeight: 700, color: FIRE_COLORS[status],
-                  background: FIRE_COLORS[status] + '22', padding: '1px 6px', borderRadius: 8,
-                }}>
+      {affected.length > 0 && (
+        <div className="ipr-section" style={{ padding: '0 14px 12px' }}>
+          <div className="ipr-section-label">Affected parts</div>
+          {affected.slice(0, LIST_LIMIT).map(p => {
+            const status = fireState[p.id]
+            return (
+              <div key={p.id} className="fire-part-row">
+                <span className="fire-part-row__name" title={p.id}>{p.id}</span>
+                <span className="fire-part-row__grade">{fireGradeOf(p, selectedVariants)}</span>
+                <span className="fire-part-row__status" style={{ color: FIRE_COLORS[status], background: FIRE_COLORS[status] + '22' }}>
                   {FIRE_LABELS[status]}
                 </span>
               </div>
-            </div>
-          )
-        })}
-      </div>
-
-      {/* Extinguish */}
-      {anyFire && (
-        <div style={{ padding: '0 14px 12px' }}>
-          <button
-            onClick={onExtinguish}
-            style={{
-              width: '100%', padding: '6px 0', border: 'none', borderRadius: 6, cursor: 'pointer',
-              background: '#2980b9', color: '#fff', fontWeight: 700, fontSize: 12,
-            }}
-          >
-            💧 Extinguish All
-          </button>
+            )
+          })}
+          {affected.length > LIST_LIMIT && (
+            <div className="fire-part-more">+{affected.length - LIST_LIMIT} more · {parts.length - affected.length} untouched</div>
+          )}
         </div>
       )}
     </div>

@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import { useKit } from './KitContext'
 
 // Derive week from sequence if not explicitly set
@@ -25,7 +24,6 @@ export default function GanttPanel({ selectedVariants, visible, onHighlightWeek,
     weekMap[w].push(p)
   }
   const weeks = Object.keys(weekMap).map(Number).sort((a, b) => a - b)
-  const maxWeek = weeks[weeks.length - 1] ?? 1
 
   // Total labour hours derived from assembly_time_min
   function totalHours(weekParts) {

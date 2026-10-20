@@ -35,9 +35,10 @@ export function modelFrame(parts) {
 
 // Camera views scale with the model. `d` is the viewing distance; the old
 // Kit-of-Parts kit (≈5 m) keeps its original 14 m views as the minimum.
-export function cameraViews(frame) {
+// Narrow (portrait) screens see less width, so the camera steps back.
+export function cameraViews(frame, aspect = 1.6) {
   const [cx, cy, cz] = frame.center
-  const d = Math.max(14, frame.radius * 2.6)
+  const d = Math.max(14, frame.radius * 2.6) * Math.max(1, 1.25 / aspect)
   const t = [cx, cy, cz]
   return {
     front:  { pos: [cx, cy + d * 0.15, cz + d], target: t },
@@ -48,4 +49,12 @@ export function cameraViews(frame) {
     left:   { pos: [cx - d, cy + d * 0.15, cz], target: t },
     home:   { pos: [cx + d * 0.55, cy + d * 0.55, cz + d * 0.55], target: t },
   }
+}
+
+// Distance that fits a box of `size` in the view, for both screen directions.
+export function fitDistance(size, fovDeg, aspect) {
+  const r = Math.hypot(...size) / 2
+  const vHalf = (fovDeg * Math.PI) / 360
+  const hHalf = Math.atan(Math.tan(vHalf) * aspect)
+  return Math.max(3, (r / Math.sin(Math.min(vHalf, hHalf))) * 1.05)
 }

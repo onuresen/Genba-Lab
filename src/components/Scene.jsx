@@ -21,10 +21,11 @@ import { useKit } from './KitContext'
 import RenderDiagnostics from './RenderDiagnostics'
 import { getContinuousRenderReasons } from '../utils/renderActivity'
 import { computeCraneLayout } from '../utils/craneLayout'
-import { cameraViews, modelFrame } from '../utils/modelMetrics'
+import { cameraViews, fitDistance, modelFrame } from '../utils/modelMetrics'
 import { factoryLayout } from '../utils/factoryLayout'
 import { markShadowsDirty, takeShadowsDirty } from '../utils/shadowSync'
 import { sunDirection } from '../utils/sun'
+import { seismicParts } from '../utils/seismic'
 
 // ── GSAP → R3F invalidation bridge ─────────────────────────
 // In `frameloop="demand"` mode R3F only renders when a React prop changes or
@@ -93,7 +94,7 @@ function CameraController({ factoryMode, controlsRef, cameraCmd, craneCabView, c
   }
 
   useEffect(() => {
-    flyTo(factoryMode ? factoryView(factory) : cameraViews(frame).home)
+    flyTo(factoryMode ? factoryView(factory) : cameraViews(frame, camera.aspect).home)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [factoryMode, camera, controlsRef])
 
@@ -112,7 +113,7 @@ function CameraController({ factoryMode, controlsRef, cameraCmd, craneCabView, c
       })
     } else {
       controlsRef.current.enabled = true
-      flyTo(cameraViews(frame).home)
+      flyTo(cameraViews(frame, camera.aspect).home)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [craneCabView])
@@ -124,13 +125,14 @@ function CameraController({ factoryMode, controlsRef, cameraCmd, craneCabView, c
     let pos, target
 
     if (cameraCmd.type === 'preset') {
-      const p = cameraViews(frame)[cameraCmd.preset]
+      const p = cameraViews(frame, camera.aspect)[cameraCmd.preset]
       if (!p) return
       pos = p.pos; target = p.target
     } else if (cameraCmd.type === 'frame') {
       const [px, py, pz] = cameraCmd.pos
-      const dist = Math.max(...cameraCmd.size) * 2 + 3
-      pos = [px + dist * 0.6, py + dist * 0.5, pz + dist * 0.6]
+      // Fit the box on screen, portrait phones included (unit view direction).
+      const dist = fitDistance(cameraCmd.size, camera.fov, camera.aspect) * (cameraCmd.pad ?? 1)
+      pos = [px + dist * 0.61, py + dist * 0.51, pz + dist * 0.61]
       target = [px, py, pz]
     }
 
@@ -286,6 +288,7 @@ export default function Scene({
   const { parts } = useKit()
   const craneLayout = useMemo(() => computeCraneLayout(parts), [parts])
   const frame = useMemo(() => modelFrame(parts), [parts])
+  const quakeIds = useMemo(() => new Set(seismicParts(parts ?? []).map(p => p.id)), [parts])
   const fadeTexture = useFadeTexture()
   // Ken grid (910 mm module) covers the model footprint.
   const footprint = Math.max(frame.size[0], frame.size[2])
@@ -392,6 +395,7 @@ export default function Scene({
             sectionCutY={sectionCutY}
             isShaking={isShaking}
             hasShaken={hasShaken}
+            inQuakeCheck={quakeIds.has(part.id)}
             earthquakeMagnitude={earthquakeMagnitude}
             highlightedWeek={highlightedWeek}
             showAcoustic={showAcoustic}

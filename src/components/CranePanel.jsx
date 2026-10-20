@@ -72,7 +72,7 @@ export default function CranePanel({ sequenceMode, sequenceStep, currentPartWeig
   return (
     <div
       className="metrics-panel crane-panel"
-      style={{ bottom: 20, right: 280, left: 'auto', top: 'auto', width: 290, maxHeight: '80vh', overflow: 'auto' }}
+      style={{ bottom: 20, right: 304, left: 'auto', top: 'auto', width: 290, maxHeight: '80vh', overflow: 'auto' }}
     >
       {/* Header */}
       <div className="metrics-header" style={{ padding: '10px 14px 0' }}>

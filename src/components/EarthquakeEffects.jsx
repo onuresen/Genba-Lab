@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef } from 'react'
 import { Html, Line } from '@react-three/drei'
 import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
+import { seismicParts } from '../utils/seismic'
 
 function riskForPart(part, selectedVariants, magnitude, hasShaken) {
   const variant = part.variants?.[selectedVariants?.[part.id] ?? 0]
@@ -72,10 +73,9 @@ function FaultLines({ magnitude, active }) {
 const STRESS_LABEL_LIMIT = 30
 
 function StressMarkers({ parts, visible, selectedVariants, magnitude, hasShaken, unit }) {
-  const atRisk = parts
+  // Same set as the verdict: structure only (windows and doors are not checked).
+  const atRisk = seismicParts(parts)
     .filter(part => visible?.[part.id] !== false)
-    // Same set as the verdict: structure only (windows and doors are not checked).
-    .filter(part => part.structural_role === 'primary' || part.structural_role === 'secondary')
     .map(part => ({ part, risk: riskForPart(part, selectedVariants, magnitude, hasShaken) }))
     .filter(r => r.risk !== 'safe')
   const showLabels = atRisk.length <= STRESS_LABEL_LIMIT

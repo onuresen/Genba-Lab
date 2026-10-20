@@ -34,6 +34,7 @@ function Part({
   sectionCutY,
   isShaking,
   hasShaken,
+  inQuakeCheck,
   earthquakeMagnitude,
   highlightedWeek,
   showAcoustic,
@@ -153,16 +154,17 @@ function Part({
   }, [isShaking])
 
   // ── Earthquake damage: failed structure leans and settles ─
+  // Only the structure the verdict checks (utils/seismic.js) flashes or fails.
   const seismicGrade = activeVariant?.seismic_grade ?? 1
-  const isStructural = data.structural_role === 'primary' || data.structural_role === 'secondary'
-  const damaged = !!hasShaken && !isShaking && isStructural && !sequenceMode && !isExploded
+  const damaged = !!hasShaken && !isShaking && inQuakeCheck && !sequenceMode && !isExploded
     && earthquakeMagnitude > seismicGrade * 3
   useEffect(() => {
     const mesh = meshRef.current
     if (!mesh) return
     if (damaged) {
-      const lean = leanSign(data.id) * 0.07
-      const drop = Math.min(0.2, data.size[1] * 0.05)
+      // About 10 cm at the ends whatever the size: a long beam must not swing through the slab.
+      const lean = leanSign(data.id) * Math.min(0.07, 0.22 / Math.max(...data.size))
+      const drop = Math.min(0.12, data.size[1] * 0.05)
       gsap.to(mesh.rotation, { z: lean, x: lean * 0.4, duration: 0.9, delay: 0.25, ease: 'bounce.out' })
       gsap.to(mesh.position, { y: data.pos[1] - drop, duration: 0.9, delay: 0.25, ease: 'bounce.out' })
       return () => {
@@ -185,7 +187,7 @@ function Part({
 
   function handleDoubleClick(e) {
     e.stopPropagation()
-    onFrame?.({ pos: data.pos, size: data.size })
+    onFrame?.({ pos: data.pos, size: data.size, pad: 1.8 })
   }
 
   function handleClick(e) {
@@ -203,7 +205,7 @@ function Part({
   }
 
   // ── Material properties ──────────────────────────────────
-  const shakeAtRisk = isShaking && isStructural && earthquakeMagnitude != null && earthquakeMagnitude > seismicGrade * 2.2
+  const shakeAtRisk = isShaking && inQuakeCheck && earthquakeMagnitude != null && earthquakeMagnitude > seismicGrade * 2.2
   const partWeek = data.week ?? Math.ceil((data.sequence ?? 1) / 2)
   const isWeekHighlighted = highlightedWeek != null && partWeek === highlightedWeek
   const isWeekDimmed = highlightedWeek != null && partWeek !== highlightedWeek

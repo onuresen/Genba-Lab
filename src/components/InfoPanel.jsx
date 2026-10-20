@@ -1,7 +1,9 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
+import { Focus, X } from 'lucide-react'
 import { useKit } from './KitContext'
-import { TYPE_COLOR } from './Connection'
+import { TYPE_COLOR } from '../utils/connectionTypes'
 import { getSupplyRiskMeta, inferStcRating, inferThermalConductivity } from '../utils/materialMetrics'
+import { partBounds } from '../utils/craneLayout'
 
 // Readable labels for the IFC summary saved on imported variants.
 const IFC_FIELDS = [
@@ -64,19 +66,40 @@ function IfcDataSection({ variant }) {
 
 const CONN_TYPES = ['bolted', 'dry-fit', 'welded', 'adhesive', 'damper', 'base-isolation']
 
+// Plan-cut height per storey: its floor level (robust to deep footings) + 1.5 m.
+function storeyCuts(parts) {
+  const byStorey = new Map()
+  for (const p of parts) {
+    const name = p.fire_compartment
+    if (!name) continue
+    if (!byStorey.has(name)) byStorey.set(name, [])
+    byStorey.get(name).push(p.pos[1] - p.size[1] / 2)
+  }
+  return [...byStorey.entries()]
+    .map(([name, bottoms]) => {
+      bottoms.sort((a, b) => a - b)
+      return { name, y: bottoms[Math.floor(bottoms.length * 0.25)] + 1.5 }
+    })
+    .sort((a, b) => a.y - b.y)
+}
+
 const SEISMIC_COLOR = { 1: '#f39c12', 2: '#3498db', 3: '#27ae60' }
 const SEISMIC_LABEL = { 1: '耐震等級1', 2: '耐震等級2', 3: '耐震等級3' }
 const FIRE_COLOR = { '1hr': '#e67e22', '2hr': '#e74c3c', 'non-rated': '#95a5a6' }
 const FIRE_LABEL = { '1hr': '耐火1時間', '2hr': '耐火2時間', 'non-rated': '非耐火' }
 
 export default function InfoPanel({
-  selected, selectedVariants, onVariantChange,
-  sequenceMode, sequenceStep, maxStep, onStepForward, onStepBack,
+  selected, onClearSelected, onFramePart, selectedVariants, onVariantChange,
   sectionCutActive, sectionCutY, onSectionCutY,
   envSettings, setEnvSettings,
   showAcoustic,
 }) {
   const { parts, addConnection, removeConnection: removeConn, formatCurrency } = useKit()
+  // Section cut range follows the model (was fixed at -0.5 to 3.5 m).
+  const bounds = useMemo(() => partBounds(parts), [parts])
+  const cutMin = bounds ? Math.floor(bounds.min[1] * 10) / 10 : -0.5
+  const cutMax = bounds ? Math.ceil(bounds.max[1] * 10) / 10 + 0.1 : 3.5
+  const cuts = useMemo(() => storeyCuts(parts), [parts])
   const [addingConn, setAddingConn] = useState(false)
   const [newConn, setNewConn] = useState({ to: '', type: 'bolted', hardware: '' })
 
@@ -106,7 +129,11 @@ export default function InfoPanel({
         /* ── Part selected ── */
         <>
           <div className="ipr-part-header" style={{ borderLeftColor: activeVariant.color }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+            <div className="ipr-part-actions">
+              <button onClick={() => onFramePart?.({ pos: part.pos, size: part.size, pad: 1.8 })} title="Zoom to part" aria-label="Zoom to part"><Focus size={14} /></button>
+              <button onClick={onClearSelected} title="Close (Esc)" aria-label="Close"><X size={14} /></button>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', paddingRight: 52 }}>
               <h3 className="ipr-title">{selected.id}</h3>
               {part.factory_work != null && (
                 <span className={`ipr-badge ${part.factory_work ? 'ipr-badge--factory' : 'ipr-badge--site'}`}>
@@ -333,45 +360,63 @@ export default function InfoPanel({
             <span className="ipr-settings-title">Settings</span>
           </div>
 
-          {sequenceMode && (
-            <div className="ipr-section">
-              <div className="ipr-section-label">Sequence</div>
-              <div className="seq-label" style={{ marginBottom: 6 }}>
-                {sequenceStep === 0
-                  ? 'Press NEXT to start'
-                  : `Step ${sequenceStep} / ${maxStep}`}
-              </div>
-              <div className="btn-row">
-                <button className="seq-btn" onClick={onStepBack} disabled={sequenceStep === 0}>← PREV</button>
-                <button className="seq-btn" onClick={onStepForward} disabled={sequenceStep === maxStep}>NEXT →</button>
-              </div>
-            </div>
-          )}
-
           {sectionCutActive && (
             <div className="ipr-section">
               <div className="ipr-section-label">Section Cut</div>
-              <div className="section-slider-label">Height: {sectionCutY.toFixed(1)} m <span className="ipr-dim-sub">({Math.round(sectionCutY * 1000)} mm)</span></div>
+              <div className="section-slider-label">Height: {sectionCutY.toFixed(1)} m</div>
               <input
                 type="range"
                 className="section-slider"
-                min="-0.5" max="3.5" step="0.05"
-                value={sectionCutY}
+                min={cutMin} max={cutMax} step={0.05}
+                value={Math.min(cutMax, Math.max(cutMin, sectionCutY))}
                 onChange={e => onSectionCutY(parseFloat(e.target.value))}
+                aria-label="Section cut height"
               />
               <div className="section-slider-ends">
                 <span>Bottom</span><span>Top</span>
               </div>
+              {cuts.length > 1 && (
+                <div className="section-storeys" role="group" aria-label="Cut through a storey">
+                  {cuts.map(c => (
+                    <button key={c.name} onClick={() => onSectionCutY(c.y)} title={`Plan cut 1.5 m above ${c.name}`}>{c.name}</button>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
           <div className="ipr-section">
             <div className="ipr-section-label">Environment</div>
             <div className="ipr-env-controls">
+              <div className="ipr-env-row ipr-env-row--time">
+                <span>
+                  Sun · time of day
+                  <span className="ipr-time-val">{envSettings.time.toString().padStart(2, '0')}:00</span>
+                </span>
+                <input type="range" min="0" max="23" step="1"
+                  value={envSettings.time}
+                  aria-label="Time of day"
+                  onChange={e => setEnvSettings(s => ({ ...s, time: parseInt(e.target.value) }))} />
+              </div>
               <label className="ipr-env-row">
-                <span>Grass Floor</span>
+                <span>Sun shadows</span>
+                <input type="checkbox" checked={envSettings.shadows !== false}
+                  onChange={e => setEnvSettings(s => ({ ...s, shadows: e.target.checked }))} />
+              </label>
+              <label className="ipr-env-row">
+                <span>Outlines</span>
+                <input type="checkbox" checked={envSettings.edges !== false}
+                  onChange={e => setEnvSettings(s => ({ ...s, edges: e.target.checked }))} />
+              </label>
+              <label className="ipr-env-row">
+                <span>Ground</span>
                 <input type="checkbox" checked={envSettings.grass}
                   onChange={e => setEnvSettings(s => ({ ...s, grass: e.target.checked }))} />
+              </label>
+              <label className="ipr-env-row">
+                <span>Ken grid (910 mm)</span>
+                <input type="checkbox" checked={!!envSettings.kenGrid}
+                  onChange={e => setEnvSettings(s => ({ ...s, kenGrid: e.target.checked }))} />
               </label>
               <label className="ipr-env-row">
                 <span>Clouds</span>
@@ -379,28 +424,14 @@ export default function InfoPanel({
                   onChange={e => setEnvSettings(s => ({ ...s, clouds: e.target.checked }))} />
               </label>
               <label className="ipr-env-row">
-                <span>Stars (Night)</span>
+                <span>Stars</span>
                 <input type="checkbox" checked={envSettings.stars}
                   onChange={e => setEnvSettings(s => ({ ...s, stars: e.target.checked }))} />
               </label>
-              <label className="ipr-env-row">
-                <span>Ken Grid (910mm)</span>
-                <input type="checkbox" checked={!!envSettings.kenGrid}
-                  onChange={e => setEnvSettings(s => ({ ...s, kenGrid: e.target.checked }))} />
-              </label>
-              <div className="ipr-env-row ipr-env-row--time">
-                <span>
-                  Time of Day
-                  <span className="ipr-time-val">{envSettings.time.toString().padStart(2, '0')}:00</span>
-                </span>
-                <input type="range" min="0" max="23" step="1"
-                  value={envSettings.time}
-                  onChange={e => setEnvSettings(s => ({ ...s, time: parseInt(e.target.value) }))} />
-              </div>
             </div>
           </div>
 
-          <div className="ipr-hint">Click a part in the scene to inspect</div>
+          <div className="ipr-hint">Click a part to inspect · double-click to zoom</div>
         </>
       )}
     </div>

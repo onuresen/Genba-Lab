@@ -1,57 +1,31 @@
 import { useKit } from './KitContext'
+import { RICHTER_LABELS, getSeismicScore, getVerdict, gradeOf, seismicParts } from '../utils/seismic'
 
-const RICHTER_LABELS = { 3: 'Minor', 4: 'Light', 5: 'Moderate', 6: 'Strong', 7: 'Major', 8: 'Great', 9: 'Catastrophic' }
-
-function getVerdict(magnitude, parts, selectedVariants) {
-  if (!parts.length) return null
-  const atRisk = parts.filter(p => {
-    const grade = p.variants[selectedVariants[p.id] ?? 0]?.seismic_grade ?? 1
-    return magnitude > grade * 3
-  })
-  const caution = parts.filter(p => {
-    const grade = p.variants[selectedVariants[p.id] ?? 0]?.seismic_grade ?? 1
-    return magnitude > grade * 2.2 && magnitude <= grade * 3
-  })
-  if (atRisk.length > 0) return { level: 'critical', label: 'CRITICAL FAILURE', color: '#e74c3c', parts: atRisk }
-  if (caution.length > 0) return { level: 'caution', label: 'AT RISK', color: '#f39c12', parts: caution }
-  return { level: 'safe', label: 'STRUCTURE SURVIVED', color: '#27ae60', parts: [] }
-}
-
-function getSeismicScore(magnitude, parts, selectedVariants) {
-  if (!parts.length) return 100
-  const total = parts.reduce((sum, part) => {
-    const grade = part.variants[selectedVariants[part.id] ?? 0]?.seismic_grade ?? 1
-    const hasBaseIso = (part.connections ?? []).some(c => c.type === 'base-isolation')
-    const capacity = grade * 3 + (hasBaseIso ? 1.1 : 0)
-    const margin = capacity - magnitude
-    let partScore
-    if (margin < 0) {
-      partScore = Math.max(18, 52 + margin * 12)
-    } else if (magnitude > grade * 2.2) {
-      partScore = Math.min(78, 62 + margin * 8)
-    } else {
-      partScore = Math.min(100, 84 + margin * 5)
-    }
-    return sum + partScore
-  }, 0)
-  return Math.round(total / parts.length)
-}
+const GRADE_COLOR = { 1: '#f39c12', 2: '#3498db', 3: '#27ae60' }
+const LIST_LIMIT = 8
 
 export default function EarthquakePanel({ magnitude, onMagnitude, isShaking, countdown, onShake, hasShaken, selectedVariants }) {
   const { parts } = useKit()
-  const primaryParts = parts.filter(p => !p.structural_role || p.structural_role === 'primary')
-  const verdict = hasShaken ? getVerdict(magnitude, primaryParts, selectedVariants) : null
+  const structure = seismicParts(parts)
+  const verdict = hasShaken ? getVerdict(magnitude, structure, selectedVariants) : null
   const richterLabel = RICHTER_LABELS[Math.floor(magnitude)] ?? 'Major'
   const trackColor = magnitude < 5 ? '#27ae60' : magnitude < 7 ? '#f39c12' : '#e74c3c'
-  const seismicScore = getSeismicScore(magnitude, primaryParts, selectedVariants)
+  const seismicScore = getSeismicScore(magnitude, structure, selectedVariants)
   const isPrimed = countdown != null
   const isLocked = isShaking || isPrimed
-  const pga = Math.min(2.4, 0.016 * Math.pow(10, 0.42 * magnitude))
+  // Indicative near-field peak ground acceleration (g): ≈0.13 at M5, 0.5 at M7,
+  // 2 at M9. The old curve hit its 2.4 g cap above M5.2, so every quake read the same.
+  const pga = Math.min(2.4, Math.pow(10, 0.3 * magnitude - 2.4))
+
+  // Parts per 耐震等級, and what each grade does at this magnitude.
+  const byGrade = [1, 2, 3]
+    .map(grade => ({ grade, count: structure.filter(p => gradeOf(p, selectedVariants) === grade).length }))
+    .filter(g => g.count > 0)
 
   return (
     <div
       className="metrics-panel eq-panel"
-      style={{ bottom: 20, right: 280, left: 'auto', top: 'auto', width: 280, maxHeight: '80vh', overflow: 'auto' }}
+      style={{ bottom: 20, right: 304, left: 'auto', top: 'auto', width: 280, maxHeight: '80vh', overflow: 'auto' }}
     >
       <div className="metrics-header" style={{ padding: '10px 14px 0' }}>
         <div style={{ fontWeight: 700, fontSize: 12, letterSpacing: '0.06em', textTransform: 'uppercase', color: trackColor }}>
@@ -76,6 +50,7 @@ export default function EarthquakePanel({ magnitude, onMagnitude, isShaking, cou
           onChange={e => onMagnitude(parseFloat(e.target.value))}
           disabled={isLocked}
           style={{ width: '100%', accentColor: trackColor }}
+          aria-label="Magnitude"
         />
         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: '#888', marginTop: 4 }}>
           <span>3.0 Minor</span>
@@ -112,31 +87,21 @@ export default function EarthquakePanel({ magnitude, onMagnitude, isShaking, cou
         </div>
       </div>
 
-      {/* Structural parts table */}
+      {/* Structure by grade: holds / at risk / fails at this magnitude */}
       <div className="ipr-section" style={{ padding: '0 14px 10px' }}>
-        <div className="ipr-section-label">Structural Parts</div>
-        {primaryParts.map(p => {
-          const v = p.variants[selectedVariants[p.id] ?? 0]
-          const grade = v?.seismic_grade ?? 1
-          const isAtRisk = hasShaken && magnitude > grade * 3
-          const isCaution = hasShaken && !isAtRisk && magnitude > grade * 2.2
-          const statusColor = isAtRisk ? '#e74c3c' : isCaution ? '#f39c12' : '#27ae60'
-          const hasBaseIso = (p.connections ?? []).some(c => c.type === 'base-isolation')
+        <div className="ipr-section-label">Structure · {structure.length} parts</div>
+        {byGrade.map(({ grade, count }) => {
+          const state = magnitude > grade * 3 ? 'fails' : magnitude > grade * 2.2 ? 'at risk' : 'holds'
+          const color = state === 'fails' ? '#e74c3c' : state === 'at risk' ? '#f39c12' : '#27ae60'
           return (
-            <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 5 }}>
-              <span className="bom-swatch" style={{ background: v?.color ?? '#999', flexShrink: 0 }} />
-              <span style={{ flex: 1, fontSize: 11, fontWeight: 500 }}>{p.id}</span>
-              {hasBaseIso && (
-                <span style={{ fontSize: 9, background: '#1abc9c22', color: '#1abc9c', border: '1px solid #1abc9c55', borderRadius: 4, padding: '1px 5px', fontWeight: 700 }}>
-                  BASE ISO
-                </span>
-              )}
-              <span style={{ fontSize: 11, fontWeight: 700, color: hasShaken ? statusColor : '#aaa' }}>
-                耐震{grade}
-              </span>
+            <div key={grade} className="eq-grade-row">
+              <span className="eq-grade-chip" style={{ color: GRADE_COLOR[grade], borderColor: GRADE_COLOR[grade] }}>耐震等級{grade}</span>
+              <span className="eq-grade-count">{count} parts</span>
+              <span className="eq-grade-state" style={{ color }}>{state}</span>
             </div>
           )
         })}
+        <div className="eq-grade-note">Grade 1 holds to M3.0, grade 2 to M6.0, grade 3 to M9.0 (indicative).</div>
       </div>
 
       {/* Shake button */}
@@ -152,7 +117,7 @@ export default function EarthquakePanel({ magnitude, onMagnitude, isShaking, cou
             animation: isShaking ? 'eq-shake-btn 0.15s infinite' : isPrimed ? 'eq-prime-btn 0.65s infinite' : 'none',
           }}
         >
-          {isPrimed ? `⚡ BRACE ${countdown}` : isShaking ? '⚡ SHAKING…' : '⚡ SIMULATE EARTHQUAKE'}
+          {isPrimed ? `⚡ BRACE ${countdown}` : isShaking ? '⚡ SHAKING…' : hasShaken ? '⚡ SHAKE AGAIN' : '⚡ SIMULATE EARTHQUAKE'}
         </button>
       </div>
 
@@ -170,15 +135,12 @@ export default function EarthquakePanel({ magnitude, onMagnitude, isShaking, cou
           </div>
           {verdict.parts.length > 0 && (
             <div style={{ marginTop: 6, display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-              {verdict.parts.map(p => (
-                <span key={p.id} style={{
-                  fontSize: 10, padding: '2px 7px', borderRadius: 10,
-                  background: '#e74c3c22', color: '#e74c3c',
-                  border: '1px solid #e74c3c55', fontWeight: 600,
-                }}>
-                  {p.id}
-                </span>
+              {verdict.parts.slice(0, LIST_LIMIT).map(p => (
+                <span key={p.id} className="eq-part-chip">{p.id}</span>
               ))}
+              {verdict.parts.length > LIST_LIMIT && (
+                <span className="eq-part-chip eq-part-chip--more">+{verdict.parts.length - LIST_LIMIT} more</span>
+              )}
             </div>
           )}
         </div>
