@@ -24,11 +24,31 @@ function normalizeParts(parts) {
   }));
 }
 
+// The last imported IFC model, read once at startup. Anything else (e.g. an
+// old block kit from before the fork dropped sample kits) is ignored.
+function restoreSavedModel() {
+  try {
+    const data = JSON.parse(localStorage.getItem('genba-lab-model') ?? 'null');
+    if (data?.projectSettings?.source?.type === 'ifc' && data.parts?.length) {
+      return {
+        parts: normalizeParts(data.parts),
+        presets: data.presets || [],
+        projectSettings: { ...DEFAULT_PROJECT, ...data.projectSettings },
+      };
+    }
+  } catch {
+    // Corrupt save: start empty.
+  }
+  return null;
+}
+
 export function KitProvider({ children }) {
-  const [parts, setPartsInternal] = useState([]);
-  const [presets, setPresets] = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [projectSettings, setProjectSettings] = useState(DEFAULT_PROJECT);
+  // Restored synchronously: no "Loading…" flash and no extra render pass.
+  const [saved] = useState(restoreSavedModel);
+  const [parts, setPartsInternal] = useState(() => saved?.parts ?? []);
+  const [presets, setPresets] = useState(() => saved?.presets ?? []);
+  const isLoading = false;
+  const [projectSettings, setProjectSettings] = useState(() => saved?.projectSettings ?? DEFAULT_PROJECT);
 
   // Undo/redo history
   const [undoStack, setUndoStack] = useState([]);
@@ -82,27 +102,15 @@ export function KitProvider({ children }) {
     return `$${usd.toLocaleString()}`;
   }
 
-  // Restore the last imported IFC model. Anything else (e.g. an old block kit
-  // from before the fork dropped sample kits) is ignored: the app starts empty.
   useEffect(() => {
+    if (parts.length === 0) return;
     try {
-      const data = JSON.parse(localStorage.getItem('genba-lab-model') ?? 'null');
-      if (data?.projectSettings?.source?.type === 'ifc' && data.parts?.length) {
-        setPartsInternal(normalizeParts(data.parts));
-        setPresets(data.presets || []);
-        setProjectSettings({ ...DEFAULT_PROJECT, ...data.projectSettings });
-      }
-    } catch {
-      // Corrupt save: start empty.
-    }
-    setIsLoading(false);
-  }, []);
-
-  useEffect(() => {
-    if (!isLoading && parts.length > 0) {
       localStorage.setItem('genba-lab-model', JSON.stringify({ parts, presets, projectSettings }));
+    } catch (err) {
+      // Full storage must not take the app down; the model just won't survive a reload.
+      console.warn('Model not saved for next time:', err);
     }
-  }, [parts, presets, projectSettings, isLoading]);
+  }, [parts, presets, projectSettings]);
 
   // Load an in-memory kit (used by IFC import).
   const loadKitData = (data) => {
@@ -170,6 +178,7 @@ export function KitProvider({ children }) {
   );
 }
 
+// eslint-disable-next-line react-refresh/only-export-components -- the hook belongs with its provider
 export function useKit() {
   return useContext(KitContext);
 }

@@ -1,42 +1,36 @@
-import { useState } from 'react'
-import { useKit } from './KitContext'
-import { importIfcFile } from '../utils/ifcImport'
+import { FolderOpen } from 'lucide-react'
 
-// "LOAD IFC" button with progress / result line. Used in the sidebar and the empty start screen.
-export default function IfcLoadButton() {
-  const { loadKitData } = useKit()
-  const [status, setStatus] = useState(null) // null | { busy, text, error }
-
-  async function handleFile(file) {
-    if (!file) return
-    setStatus({ busy: true, text: `Reading ${file.name}…` })
-    try {
-      const { kit, summary } = await importIfcFile(file, (done, total) => {
-        setStatus({ busy: true, text: `Meshing ${done} / ${total}` })
-      })
-      loadKitData(kit)
-      const groupedNote = summary.grouped ? ' (grouped by storey + type)' : ''
-      setStatus({ busy: false, text: `${summary.elements} elements → ${summary.parts} parts${groupedNote}` })
-    } catch (err) {
-      console.error(err)
-      setStatus({ busy: false, error: true, text: `IFC import failed: ${err.message}` })
-    }
-  }
-
+// "Open IFC" button with progress / result line. Import state comes from
+// useIfcImport (shared with the start screen and drag-and-drop).
+export default function IfcLoadButton({ ifc, label = 'Open IFC file', compact = false, showStatus = true }) {
+  const { status, importFile } = ifc
   return (
     <>
-      <button className="tool-btn ifc-load-btn" disabled={status?.busy}>
-        {status?.busy ? 'IMPORTING IFC…' : 'LOAD IFC'}
+      <button className={`tool-btn ifc-load-btn${compact ? ' ifc-load-btn--compact' : ''}`} disabled={status?.busy}>
+        <FolderOpen size={14} />
+        {status?.busy ? 'Importing…' : label}
         <input
           type="file"
           accept=".ifc"
           disabled={status?.busy}
-          onChange={e => { handleFile(e.target.files[0]); e.target.value = '' }}
+          aria-label={label}
+          onChange={e => { importFile(e.target.files[0]); e.target.value = '' }}
         />
       </button>
-      {status && (
-        <div className={`ifc-status${status.error ? ' ifc-status--error' : ''}`}>{status.text}</div>
-      )}
+      {showStatus && status && <ImportStatus status={status} />}
     </>
+  )
+}
+
+export function ImportStatus({ status }) {
+  return (
+    <div className={`ifc-status${status.error ? ' ifc-status--error' : ''}`} role="status">
+      {status.busy && (
+        <div className="ifc-progress">
+          <div className="ifc-progress__bar" style={{ width: `${Math.round((status.progress ?? 0) * 100)}%` }} />
+        </div>
+      )}
+      {status.text}
+    </div>
   )
 }

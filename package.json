@@ -18,7 +18,8 @@
     "preview": "vite preview",
     "test:ifc": "node --test tests/ifcImport.test.mjs",
     "test:crane": "node --test tests/craneLayout.test.mjs",
-    "test": "node --test tests/*.test.mjs"
+    "test": "node --test tests/*.test.mjs",
+    "sample:ifc": "node scripts/make-sample-ifc.mjs"
   },
   "dependencies": {
     "@onuresen/openbim-core": "file:vendor/onuresen-openbim-core-0.1.1.tgz",

@@ -19,9 +19,20 @@ function openDb() {
     if (typeof indexedDB === 'undefined') return reject(new Error('IndexedDB unavailable'))
     const req = indexedDB.open(DB_NAME, 1)
     req.onupgradeneeded = () => req.result.createObjectStore(STORE)
-    req.onsuccess = () => resolve(req.result)
+    req.onsuccess = () => {
+      const db = req.result
+      db.onversionchange = () => { db.close(); dbPromise = null }
+      resolve(db)
+    }
     req.onerror = () => reject(req.error)
   })
+}
+
+// One connection for the session (was one open per part on reload).
+let dbPromise = null
+function getDb() {
+  if (!dbPromise) dbPromise = openDb().catch(err => { dbPromise = null; throw err })
+  return dbPromise
 }
 
 function toGeometry({ positions, normals, indices }) {
@@ -45,7 +56,7 @@ export async function saveIfcGeometries(geometries) {
   for (const [key, mesh] of geometries) cache.set(key, toGeometry(mesh))
   notify()
   try {
-    const db = await openDb()
+    const db = await getDb()
     await new Promise((resolve, reject) => {
       const tx = db.transaction(STORE, 'readwrite')
       const store = tx.objectStore(STORE)
@@ -54,27 +65,50 @@ export async function saveIfcGeometries(geometries) {
       tx.oncomplete = resolve
       tx.onerror = () => reject(tx.error)
     })
-    db.close()
   } catch (err) {
     console.warn('IFC meshes not persisted:', err)
   }
 }
 
-async function loadFromDb(key) {
+// Keys asked for during one render pass are read in one transaction and
+// published with one notify, instead of one connection + re-render per part.
+const batch = new Set()
+let flushQueued = false
+
+function loadFromDb(key) {
   pending.add(key)
+  batch.add(key)
+  if (flushQueued) return
+  flushQueued = true
+  queueMicrotask(flushBatch)
+}
+
+async function flushBatch() {
+  flushQueued = false
+  const keys = [...batch]
+  batch.clear()
+  let found = new Map()
   try {
-    const db = await openDb()
-    const mesh = await new Promise((resolve, reject) => {
-      const req = db.transaction(STORE).objectStore(STORE).get(key)
-      req.onsuccess = () => resolve(req.result)
-      req.onerror = () => reject(req.error)
+    const db = await getDb()
+    found = await new Promise((resolve, reject) => {
+      const out = new Map()
+      const tx = db.transaction(STORE)
+      const store = tx.objectStore(STORE)
+      for (const key of keys) {
+        const req = store.get(key)
+        req.onsuccess = () => { if (req.result) out.set(key, req.result) }
+      }
+      tx.oncomplete = () => resolve(out)
+      tx.onerror = () => reject(tx.error)
     })
-    db.close()
-    cache.set(key, mesh ? toGeometry(mesh) : null)
   } catch {
-    cache.set(key, null)
+    // Missing store or no IndexedDB: parts fall back to boxes.
   }
-  pending.delete(key)
+  for (const key of keys) {
+    const mesh = found.get(key)
+    cache.set(key, mesh ? toGeometry(mesh) : null)
+    pending.delete(key)
+  }
   notify()
 }
 

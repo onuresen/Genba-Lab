@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import * as THREE from 'three'
-import { Edges, Grid, Html } from '@react-three/drei'
+import { Grid, Html } from '@react-three/drei'
 import { useKit } from './KitContext'
 import { useIfcGeometry } from '../utils/ifcGeometryStore'
+import { edgesFor, noRaycast, useEdges } from '../utils/edges'
 import { BAY_SIZE, BAY_SPACING_X, BAY_SPACING_Z, factoryLayout } from '../utils/factoryLayout'
 
 const WEIGHT_LIMIT_KG = 3000
@@ -11,6 +12,9 @@ const LEAD_LIMIT_DAYS = 45
 const TRANSPORT_LIMIT = [2.5, 3.8, 12]
 // Above this many bays, per-bay labels only show on hover (each <Html> costs a reprojection per frame).
 const LABEL_LIMIT = 30
+// One shared bay outline for every bay.
+const BAY_BOX = new THREE.BoxGeometry(BAY_SIZE[0], 0.02, BAY_SIZE[1])
+const BAY_EDGES = edgesFor(BAY_BOX)
 
 function bayPosition(index, cols) {
   const col = index % cols
@@ -40,6 +44,11 @@ function getBayWarnings(part, variant) {
 function FactoryPart({ part, variant, index, cols, compact, draggedPartId, dropPartId, onDragStart, onDrop }) {
   const [hovered, setHovered] = useState(false)
   const ifcGeometry = useIfcGeometry(part.shape === 'ifc' ? part.ifcGeometry : null)
+  const [sx, sy, sz] = part.size
+  const boxGeometry = useMemo(() => (ifcGeometry ? null : new THREE.BoxGeometry(sx, sy, sz)), [ifcGeometry, sx, sy, sz])
+  useEffect(() => () => boxGeometry?.dispose(), [boxGeometry])
+  const geometry = ifcGeometry ?? boxGeometry
+  const edges = useEdges(geometry, ifcGeometry ? 30 : 15)
   const showDetails = !compact || hovered || draggedPartId === part.id
   const [x, y, z] = bayPosition(index, cols)
   const scale = Math.min(1, 2.6 / Math.max(part.size[0], part.size[1], part.size[2]))
@@ -80,22 +89,29 @@ function FactoryPart({ part, variant, index, cols, compact, draggedPartId, dropP
           document.body.style.cursor = 'auto'
         }}
       >
-        <boxGeometry args={[BAY_SIZE[0], 0.02, BAY_SIZE[1]]} />
+        <primitive object={BAY_BOX} attach="geometry" dispose={null} />
         <meshBasicMaterial transparent opacity={0} depthWrite={false} />
-        <Edges color={bayColor} />
+        <lineSegments geometry={BAY_EDGES} raycast={noRaycast} dispose={null}>
+          <lineBasicMaterial color={bayColor} />
+        </lineSegments>
       </mesh>
 
       <group position={[0, 0.42, 0]} rotation={[-Math.PI / 2, 0, 0]} scale={[scale, scale, scale]}>
         <mesh castShadow receiveShadow>
-          {ifcGeometry
-            ? <primitive object={ifcGeometry} attach="geometry" dispose={null} />
-            : <boxGeometry args={part.size} />}
+          {geometry && <primitive object={geometry} attach="geometry" dispose={null} />}
           <meshStandardMaterial
             color={variant?.color ?? '#95a5a6'}
             roughness={0.72}
             side={ifcGeometry ? THREE.DoubleSide : THREE.FrontSide}
+            polygonOffset
+            polygonOffsetFactor={1}
+            polygonOffsetUnits={1}
           />
-          <Edges color="#26323d" threshold={ifcGeometry ? 30 : 15} />
+          {edges && (
+            <lineSegments geometry={edges} raycast={noRaycast} dispose={null}>
+              <lineBasicMaterial color="#26323d" transparent opacity={0.45} depthWrite={false} />
+            </lineSegments>
+          )}
         </mesh>
       </group>
 

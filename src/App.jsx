@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import Scene from './components/Scene'
 import InfoPanel from './components/InfoPanel'
 import Sidebar from './components/Sidebar'
@@ -10,14 +10,28 @@ import CranePanel from './components/CranePanel'
 import EarthquakePanel from './components/EarthquakePanel'
 import FloorPlanPanel from './components/FloorPlanPanel'
 import FirePanel from './components/FirePanel'
+import SequencePlayer from './components/SequencePlayer'
+import Celebration from './components/Celebration'
+import StartScreen from './components/StartScreen'
+import DropOverlay from './components/DropOverlay'
 import { useKit } from './components/KitContext'
-import IfcLoadButton from './components/IfcLoadButton'
+import { useIfcImport } from './utils/useIfcImport'
 import { computeCraneLayout, partBounds } from './utils/craneLayout'
 import { estimateFloorArea } from './utils/modelMetrics'
+import { fireGradeOf, fireRoundResult, spreadFire } from './utils/fireSim'
+import { getSeismicScore, getVerdict, seismicParts } from './utils/seismic'
+import { canRecord, startCanvasRecording } from './utils/videoRecorder'
 import './App.css'
+
+// Build playback: 1× places the whole model in about 45 s, whatever its size.
+const BUILD_SECONDS = 45
+function stepMs(maxStep, speed) {
+  return Math.min(1200, Math.max(250, (BUILD_SECONDS * 1000) / Math.max(1, maxStep))) / speed
+}
 
 export default function App() {
   const { parts, projectSettings, isLoading, undo, redo, canUndo, canRedo } = useKit()
+  const ifc = useIfcImport()
 
   const [exploded, setExploded] = useState(false)
   const [selected, setSelected] = useState(null)
@@ -25,17 +39,22 @@ export default function App() {
   const [selectedVariants, setSelectedVariants] = useState({})
   const [activePreset, setActivePreset] = useState(null)
 
-  useEffect(() => {
-    if (parts && parts.length > 0) {
-      setVisible(Object.fromEntries(parts.map(p => [p.id, true])))
-      setSelectedVariants(Object.fromEntries(parts.map(p => [p.id, 0])))
-      setSelected(null)
-      setActivePreset(null)
-    }
-  }, [parts])
+  // A new model starts fully visible with its imported variants. Edits to the
+  // same model (factory order, connections, undo) keep what you hid or switched.
+  const modelKey = projectSettings?.source?.modelKey ?? null
+  const [viewKey, setViewKey] = useState(null)
+  if (parts.length > 0 && modelKey !== viewKey) {
+    setViewKey(modelKey)
+    setVisible(Object.fromEntries(parts.map(p => [p.id, true])))
+    setSelectedVariants(Object.fromEntries(parts.map(p => [p.id, 0])))
+    setSelected(null)
+    setActivePreset(null)
+  }
 
   const [sequenceMode, setSequenceMode] = useState(false)
   const [sequenceStep, setSequenceStep] = useState(0)
+  const [seqPlaying, setSeqPlaying] = useState(false)
+  const [seqSpeed, setSeqSpeed] = useState(1)
 
   const [showMetrics, setShowMetrics] = useState(false)
   const [showDimensions, setShowDimensions] = useState(false)
@@ -45,7 +64,7 @@ export default function App() {
   const [sectionCutActive, setSectionCutActive] = useState(false)
   const [sectionCutY, setSectionCutY] = useState(3.5)
 
-  const [envSettings, setEnvSettings] = useState({ grass: true, time: 12, clouds: false, stars: false, kenGrid: false })
+  const [envSettings, setEnvSettings] = useState({ grass: true, time: 14, clouds: false, stars: false, kenGrid: false, shadows: true, edges: true })
 
   const [factoryMode, setFactoryMode] = useState(false)
 
@@ -57,6 +76,11 @@ export default function App() {
   const [showCraneRadius, setShowCraneRadius] = useState(false)
   const [cinematicMode, setCinematicMode] = useState(false)
   const rendererRef = useRef(null)
+
+  // Result moments: topped out, earthquake verdict, fire out.
+  const [celebration, setCelebration] = useState(null)
+  const celebrate = useCallback(event => setCelebration({ ...event, ts: Date.now() }), [])
+  const clearCelebration = useCallback(() => setCelebration(null), [])
 
   // ── Gantt / schedule ─────────────────────────────────────
   const [highlightedWeek, setHighlightedWeek] = useState(null)
@@ -95,6 +119,10 @@ export default function App() {
   const [fireIntensity, setFireIntensity] = useState(65)
   const [showFireCompartments, setShowFireCompartments] = useState(false)
   const fireBurnStartRef = useRef({})
+  const fireStartRef = useRef(0)
+  // Latest fire state for the stable click handler and the spread timer.
+  const fireStateRef = useRef(fireState)
+  useEffect(() => { fireStateRef.current = fireState }, [fireState])
 
   // ── Earthquake ───────────────────────────────────────────
   const [showEarthquake, setShowEarthquake] = useState(false)
@@ -103,10 +131,13 @@ export default function App() {
   const [hasShaken, setHasShaken] = useState(false)
   const [earthquakeCountdown, setEarthquakeCountdown] = useState(null)
 
+  const sortedParts = useMemo(
+    () => [...parts].sort((a, b) => (a.sequence ?? 99) - (b.sequence ?? 99)),
+    [parts]
+  )
   const currentPartWeight = (() => {
-    if (!sequenceMode || !parts || sequenceStep <= 0) return 0
-    const sorted = [...parts].sort((a, b) => (a.sequence ?? 99) - (b.sequence ?? 99))
-    const part = sorted[sequenceStep - 1]
+    if (!sequenceMode || sequenceStep <= 0) return 0
+    const part = sortedParts[sequenceStep - 1]
     if (!part) return 0
     const variantIdx = selectedVariants[part.id] ?? 0
     return part.variants[variantIdx]?.weight_kg ?? 0
@@ -115,34 +146,6 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('genba-lab-dark', darkMode)
   }, [darkMode])
-
-  // ── Global keyboard shortcuts ─────────────────────────────
-  useEffect(() => {
-    function onKey(e) {
-      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return
-      if (e.key === '?') { setShowShortcuts(s => !s); return }
-      if (e.key === 'Escape') { setShowShortcuts(false); setSelected(null); return }
-      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) { e.preventDefault(); undo(); return }
-      if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) { e.preventDefault(); redo(); return }
-      if (e.key === 'e' || e.key === 'E') { setExploded(v => !v); setSequenceMode(false) }
-      if (e.key === 'd' || e.key === 'D') setShowDimensions(v => !v)
-      if (e.key === 'l' || e.key === 'L') setShowConnections(v => !v)
-      if (e.key === 'm' || e.key === 'M') setShowMetrics(v => !v)
-      if (e.key === 'x' || e.key === 'X') setSectionCutActive(v => !v)
-      if (e.key === 'f' || e.key === 'F') toggleFactoryMode()
-      if (e.key === '1') handleCameraPreset('front')
-      if (e.key === '2') handleCameraPreset('top')
-      if (e.key === '3') handleCameraPreset('right')
-      if (e.key === '0') handleCameraPreset('home')
-      if (e.key === 's' || e.key === 'S') {
-        if (factoryMode) setFactoryMode(false)
-        if (sequenceMode) { setSequenceMode(false); setSequenceStep(0) }
-        setSelected(null)
-      }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [factoryMode, sequenceMode])
 
   // ── Handlers ─────────────────────────────────────────────
   function togglePart(id) {
@@ -164,27 +167,99 @@ export default function App() {
     setSelected(null)
   }
 
+  // ── Build sequence ───────────────────────────────────────
+  const maxStep = parts.length
+  const storeyCount = useMemo(() => new Set(parts.map(p => p.fire_compartment).filter(Boolean)).size, [parts])
+
+  const goToStep = useCallback(n => {
+    const target = Math.max(0, Math.min(maxStep, n))
+    setSequenceStep(target)
+    if (target === maxStep && maxStep > 0) {
+      setSeqPlaying(false)
+      celebrate({
+        title: '上棟 · Topped out!',
+        subtitle: `${maxStep} parts placed${storeyCount > 1 ? ` · ${storeyCount} storeys` : ''}`,
+        tone: 'win',
+      })
+    }
+  }, [maxStep, storeyCount, celebrate])
+
+  // Autoplay: one part per tick; stops at the last part.
+  useEffect(() => {
+    if (!sequenceMode || !seqPlaying || cinematicMode) return
+    const id = setTimeout(() => goToStep(sequenceStep + 1), stepMs(maxStep, seqSpeed))
+    return () => clearTimeout(id)
+  }, [sequenceMode, seqPlaying, sequenceStep, seqSpeed, maxStep, goToStep, cinematicMode])
+
+  // ── Build video: record the canvas while the build plays ──
+  const [recording, setRecording] = useState(false)
+  const recorderRef = useRef(null)
+
+  const stopRecording = useCallback(async () => {
+    const rec = recorderRef.current
+    if (!rec) return
+    recorderRef.current = null
+    setRecording(false)
+    const { fileName } = await rec.stop()
+    celebrate({ title: 'Video saved', subtitle: `${fileName} · ready to share`, tone: 'info' })
+  }, [celebrate])
+
+  function toggleRecording() {
+    if (recording) { stopRecording(); return }
+    const canvas = rendererRef.current?.domElement
+    if (!canRecord(canvas)) {
+      celebrate({ title: 'Recording not supported here', subtitle: 'Try Chrome, Edge or Firefox.', tone: 'warn' })
+      return
+    }
+    recorderRef.current = startCanvasRecording(canvas)
+    setRecording(true)
+    setSelected(null)
+    setSequenceStep(0)
+    setSeqPlaying(true)
+  }
+
+  // Stop a moment after the last part lands, so the video ends on the full building.
+  useEffect(() => {
+    if (!recording || sequenceStep < maxStep) return
+    const id = setTimeout(stopRecording, 2500)
+    return () => clearTimeout(id)
+  }, [recording, sequenceStep, maxStep, stopRecording])
+
   function toggleSequenceMode() {
+    setExploded(false)
+    setSequenceStep(0)
     if (sequenceMode) {
+      if (recording) stopRecording()
       setSequenceMode(false)
-      setSequenceStep(0)
-      setExploded(false)
+      setSeqPlaying(false)
     } else {
+      // Entering build mode starts the build right away.
       setSequenceMode(true)
-      setSequenceStep(0)
-      setExploded(false)
+      setSeqPlaying(true)
     }
   }
 
-  const maxStep = parts ? parts.length : 0
-  function stepForward() { setSequenceStep(s => Math.min(s + 1, maxStep)) }
-  function stepBack() { setSequenceStep(s => Math.max(s - 1, 0)) }
+  function toggleSeqPlay() {
+    if (!seqPlaying && sequenceStep >= maxStep) setSequenceStep(0)
+    setSeqPlaying(v => !v)
+  }
+
+  function stepSequence(delta) {
+    setSeqPlaying(false)
+    goToStep(sequenceStep + delta)
+  }
+
+  function seekSequence(n) {
+    setSeqPlaying(false)
+    goToStep(n)
+  }
 
   function toggleFactoryMode() {
     if (!factoryMode) {
       setExploded(false)
       setSequenceMode(false)
       setSequenceStep(0)
+      setSeqPlaying(false)
       setCinematicMode(false)
       setCraneCabView(false)
       setLiftPlanMode(false)
@@ -195,32 +270,35 @@ export default function App() {
     setFactoryMode(v => !v)
   }
 
+  function toggleSectionCut() {
+    // Start at mid-height of the model (the old fixed 3.5 m missed most buildings).
+    if (!sectionCutActive) {
+      const b = partBounds(parts)
+      if (b) setSectionCutY(+((b.min[1] + b.max[1]) / 2).toFixed(2))
+    }
+    setSectionCutActive(v => !v)
+  }
+
   function handleCameraPreset(preset) {
     setCameraCmd({ type: 'preset', preset, ts: Date.now() })
   }
 
-  const handleFramePart = useCallback(({ pos, size }) => {
-    setCameraCmd({ type: 'frame', pos, size, ts: Date.now() })
+  // pad > 1 leaves room around a single part; whole-model framing fits tight.
+  const handleFramePart = useCallback(({ pos, size, pad = 1 }) => {
+    setCameraCmd({ type: 'frame', pos, size, pad, ts: Date.now() })
   }, [])
 
   // IFC models are often far bigger than the default camera view.
   // Frame the whole model once per imported model (also after reload).
-  const ifcModelKey = projectSettings?.source?.modelKey
   useEffect(() => {
-    if (!ifcModelKey || !parts?.length) return
-    const min = [Infinity, Infinity, Infinity]
-    const max = [-Infinity, -Infinity, -Infinity]
-    for (const p of parts) {
-      for (let k = 0; k < 3; k++) {
-        min[k] = Math.min(min[k], p.pos[k] - p.size[k] / 2)
-        max[k] = Math.max(max[k], p.pos[k] + p.size[k] / 2)
-      }
-    }
-    const pos = min.map((v, k) => (v + max[k]) / 2)
-    const size = min.map((v, k) => max[k] - v)
-    handleFramePart({ pos, size })
+    if (!modelKey || !parts?.length) return
+    const b = partBounds(parts)
+    handleFramePart({
+      pos: b.min.map((v, k) => (v + b.max[k]) / 2),
+      size: b.min.map((v, k) => b.max[k] - v),
+    })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ifcModelKey])
+  }, [modelKey])
 
   // The crane stands outside the model: when it is switched on, frame both.
   useEffect(() => {
@@ -237,8 +315,21 @@ export default function App() {
   }, [showCrane])
 
   // ── Earthquake ───────────────────────────────────────────
+  function announceQuake(magnitude) {
+    const structure = seismicParts(parts)
+    const verdict = getVerdict(magnitude, structure, selectedVariants)
+    if (!verdict) return
+    const score = getSeismicScore(magnitude, structure, selectedVariants)
+    const m = magnitude.toFixed(1)
+    const n = verdict.parts.length
+    if (verdict.level === 'safe') celebrate({ title: `Survived M${m}!`, subtitle: `Seismic score ${score}/100 · no structural damage`, tone: 'win' })
+    else if (verdict.level === 'caution') celebrate({ title: 'Standing, but damaged', subtitle: `${n} part${n === 1 ? '' : 's'} at risk · score ${score}/100`, tone: 'warn' })
+    else celebrate({ title: 'Structural failure', subtitle: `${n} part${n === 1 ? '' : 's'} failed at M${m} · score ${score}/100`, tone: 'fail' })
+  }
+
   function handleShake() {
     if (isShaking || earthquakeCountdown != null) return
+    const magnitude = earthquakeMagnitude
     setHasShaken(false)
     setEarthquakeCountdown(3)
     let next = 3
@@ -248,10 +339,11 @@ export default function App() {
         clearInterval(countdownId)
         setEarthquakeCountdown(null)
         setIsShaking(true)
-        const duration = (earthquakeMagnitude * 0.35 + 1) * 1000
+        const duration = (magnitude * 0.35 + 1) * 1000
         setTimeout(() => {
           setIsShaking(false)
           setHasShaken(true)
+          announceQuake(magnitude)
         }, duration)
       } else {
         setEarthquakeCountdown(next)
@@ -259,64 +351,84 @@ export default function App() {
     }, 650)
   }
 
-  // ── Fire propagation ─────────────────────────────────────
-  useEffect(() => {
-    const hasBurningPart = Object.values(fireState).some(status => status === 'burning')
-    if (!fireMode || !parts || !hasBurningPart || factoryMode) return
+  // ── Fire ─────────────────────────────────────────────────
+  const finishFireRound = useCallback(state => {
+    const elapsed = Math.round((Date.now() - fireStartRef.current) / 1000)
+    const result = fireRoundResult(state, parts.length, elapsed)
+    if (result) celebrate({ title: result.title, subtitle: result.subtitle, tone: result.tone })
+  }, [parts.length, celebrate])
 
+  const anyBurning = Object.values(fireState).some(status => status === 'burning')
+  useEffect(() => {
+    if (!fireMode || !anyBurning || factoryMode) return
+    let tick = 0
     const id = setInterval(() => {
+      tick += 1
       setFireElapsed(e => e + 1)
-      const now = Date.now()
-      setFireState(prev => {
-        const next = { ...prev }
-        for (const part of parts) {
-          if (next[part.id] !== 'burning') continue
-          const burnSecs = (now - (fireBurnStartRef.current[part.id] ?? now)) / 1000
-          const vi = selectedVariants[part.id] ?? 0
-          const grade = part.variants[vi]?.fire_resistance_grade ?? 'non-rated'
-          const intensityFactor = 1.35 - (fireIntensity / 100) * 0.7
-          const failTime = grade === '2hr' ? Infinity : (grade === '1hr' ? 15 : 5) * intensityFactor
-          if (burnSecs >= failTime) { next[part.id] = 'failed'; continue }
-          const propDelay = (grade === '1hr' ? 3 : 1) * intensityFactor
-          if (burnSecs < propDelay) continue
-          for (const conn of (part.connections ?? [])) {
-            if (next[conn.to] && next[conn.to] !== 'ok') continue
-            const cp = parts.find(p => p.id === conn.to)
-            if (!cp) continue
-            const cvi = selectedVariants[conn.to] ?? 0
-            if (cp.variants[cvi]?.fire_resistance_grade === '2hr') continue
-            next[conn.to] = 'burning'
-            if (!fireBurnStartRef.current[conn.to]) fireBurnStartRef.current[conn.to] = now
-          }
-        }
-        return next
+      const prev = fireStateRef.current
+      const next = spreadFire({
+        parts, state: prev, burnStart: fireBurnStartRef.current,
+        selectedVariants, intensity: fireIntensity, now: Date.now(), tick,
       })
+      if (next !== prev) {
+        fireStateRef.current = next
+        setFireState(next)
+        finishFireRound(next)
+      }
     }, 1000)
     return () => clearInterval(id)
-  }, [fireMode, fireState, parts, selectedVariants, fireIntensity, factoryMode])
+  }, [fireMode, anyBurning, parts, selectedVariants, fireIntensity, factoryMode, finishFireRound])
 
+  // New fire round at one part.
   const handleIgnite = useCallback((partId) => {
-    fireBurnStartRef.current = { [partId]: Date.now() }
-    setFireState({ [partId]: 'burning' })
+    const now = Date.now()
+    fireBurnStartRef.current = { [partId]: now }
+    fireStartRef.current = now
+    const next = { [partId]: 'burning' }
+    fireStateRef.current = next
+    setFireState(next)
     setFireElapsed(0)
   }, [])
 
+  // Click in fire mode: put a burning part out, or set another part on fire.
+  const handleFireClick = useCallback((partId) => {
+    const state = fireStateRef.current
+    const status = state[partId] ?? 'ok'
+    if (status === 'burning') {
+      const next = { ...state, [partId]: 'out' }
+      fireStateRef.current = next
+      setFireState(next)
+      finishFireRound(next)
+      return
+    }
+    if (!Object.values(state).some(s => s === 'burning')) {
+      handleIgnite(partId)
+      return
+    }
+    if (status === 'ok') {
+      fireBurnStartRef.current[partId] = Date.now()
+      const next = { ...state, [partId]: 'burning' }
+      fireStateRef.current = next
+      setFireState(next)
+    }
+  }, [handleIgnite, finishFireRound])
+
+  // A random part among the weakest fire rating, above ground (a burning
+  // footing is no test), so every restart is a new scenario.
   function handleIgniteFirst() {
     if (!parts?.length) return
-    const candidates = parts
-      .filter(p => visible[p.id] !== false)
-      .map(p => {
-        const vi = selectedVariants[p.id] ?? 0
-        const grade = p.variants[vi]?.fire_resistance_grade ?? 'non-rated'
-        const risk = grade === 'non-rated' ? 0 : grade === '1hr' ? 1 : 2
-        return { part: p, risk }
-      })
-      .sort((a, b) => a.risk - b.risk || (a.part.sequence ?? 99) - (b.part.sequence ?? 99))
-    handleIgnite(candidates[0]?.part.id ?? parts[0].id)
+    const rank = { 'non-rated': 0, '1hr': 1, '2hr': 2 }
+    const BURIED = new Set(['IfcFooting', 'IfcPile'])
+    const pool = parts.filter(p => visible[p.id] !== false && !BURIED.has(p.variants[0]?.ifc_entity))
+    const candidates = pool.length ? pool : parts
+    const weakest = Math.min(...candidates.map(p => rank[fireGradeOf(p, selectedVariants)] ?? 0))
+    const options = candidates.filter(p => (rank[fireGradeOf(p, selectedVariants)] ?? 0) === weakest)
+    handleIgnite(options[Math.floor(Math.random() * options.length)].id)
   }
 
   function handleExtinguish() {
     fireBurnStartRef.current = {}
+    fireStateRef.current = {}
     setFireState({})
     setFireElapsed(0)
   }
@@ -345,6 +457,72 @@ export default function App() {
     setLiftStart(null)
     setLiftEnd(null)
   }
+
+  // ── Global keyboard shortcuts ─────────────────────────────
+  // The listener is added once and always calls the latest handler, so undo,
+  // redo and the mode toggles never read stale state (Ctrl+Z used to do
+  // nothing after a factory reorder).
+  function onKey(e) {
+    const tag = e.target.tagName
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || e.target.isContentEditable) return
+    // Space / Enter on a focused button press that button, nothing else.
+    if (tag === 'BUTTON' && (e.key === ' ' || e.key === 'Enter')) return
+    const mod = e.ctrlKey || e.metaKey
+    if (mod && e.key.toLowerCase() === 'z' && !e.shiftKey) { e.preventDefault(); undo(); return }
+    if (mod && (e.key.toLowerCase() === 'y' || (e.key.toLowerCase() === 'z' && e.shiftKey))) { e.preventDefault(); redo(); return }
+    if (mod || e.altKey) return
+    if (e.key === '?') { setShowShortcuts(s => !s); return }
+    if (e.key === 'Escape') {
+      if (showShortcuts) setShowShortcuts(false)
+      else if (showFloorPlan) setShowFloorPlan(false)
+      else if (selected) setSelected(null)
+      else if (showMetrics) setShowMetrics(false)
+      return
+    }
+    if (sequenceMode && !cinematicMode) {
+      if (e.key === ' ') { e.preventDefault(); toggleSeqPlay(); return }
+      if (e.key === 'ArrowRight') { e.preventDefault(); stepSequence(1); return }
+      if (e.key === 'ArrowLeft') { e.preventDefault(); stepSequence(-1); return }
+      if (e.key === 'Home') { seekSequence(0); return }
+      if (e.key === 'End') { seekSequence(maxStep); return }
+    }
+    if (e.repeat) return
+    const inModel = !factoryMode
+    switch (e.key.toLowerCase()) {
+      case 'e': if (inModel && !sequenceMode) setExploded(v => !v); break
+      case 'd': if (inModel) setShowDimensions(v => !v); break
+      case 'l': if (inModel) setShowConnections(v => !v); break
+      case 'm': setShowMetrics(v => !v); break
+      case 'x': if (inModel) toggleSectionCut(); break
+      case 'f': if (!sequenceMode) toggleFactoryMode(); break
+      case 'b': if (inModel) toggleSequenceMode(); break
+      case 'c': if (inModel) setShowCrane(v => !v); break
+      case 'q': if (inModel) { setShowEarthquake(v => !v); setHasShaken(false) } break
+      case 'w': if (inModel) setShowWindArrows(v => !v); break
+      case 'r': if (inModel) setShowWaterSim(v => !v); break
+      case 'i': if (inModel) handleToggleFireMode(); break
+      case 't': if (inModel) setShowThermal(v => !v); break
+      case 'a': if (inModel) setShowAcoustic(v => !v); break
+      case 'p': if (inModel) setShowFloorPlan(v => !v); break
+      case '1': handleCameraPreset('front'); break
+      case '2': handleCameraPreset('top'); break
+      case '3': handleCameraPreset('right'); break
+      case '0': handleCameraPreset('home'); break
+      case 's':
+        if (factoryMode) setFactoryMode(false)
+        if (sequenceMode) { setSequenceMode(false); setSequenceStep(0); setSeqPlaying(false) }
+        setSelected(null)
+        break
+      default: break
+    }
+  }
+  const onKeyRef = useRef(onKey)
+  useEffect(() => { onKeyRef.current = onKey })
+  useEffect(() => {
+    const listener = e => onKeyRef.current(e)
+    window.addEventListener('keydown', listener)
+    return () => window.removeEventListener('keydown', listener)
+  }, [])
 
   // ── Share / screenshot ───────────────────────────────────
   const shareMetrics = (() => {
@@ -445,15 +623,10 @@ export default function App() {
 
   if (!parts || parts.length === 0) {
     return (
-      <div id="root-container" className="empty-start" data-theme={darkMode ? 'dark' : 'light'}>
-        <div className="empty-start-card">
-          <h1>Genba Lab</h1>
-          <p>Real building models, real what-ifs.</p>
-          <p>Load an IFC file to start.</p>
-          <p className="empty-start-note">The file stays in your browser. Nothing is uploaded.</p>
-          <IfcLoadButton />
-        </div>
-      </div>
+      <>
+        <StartScreen ifc={ifc} darkMode={darkMode} />
+        <DropOverlay onFile={ifc.importFile} />
+      </>
     )
   }
 
@@ -464,7 +637,7 @@ export default function App() {
         exploded={exploded}
         onToggleExplode={() => { setExploded(v => !v); setSequenceMode(false) }}
         sectionCutActive={sectionCutActive}
-        onToggleSectionCut={() => setSectionCutActive(v => !v)}
+        onToggleSectionCut={toggleSectionCut}
         showDimensions={showDimensions}
         showConnections={showConnections}
         onToggleConnections={() => setShowConnections(v => !v)}
@@ -475,9 +648,6 @@ export default function App() {
         onToggleFactoryMode={toggleFactoryMode}
         sequenceMode={sequenceMode}
         onToggleSequence={toggleSequenceMode}
-        darkMode={darkMode}
-        onToggleDark={() => setDarkMode(v => !v)}
-        onToggleShortcuts={() => setShowShortcuts(v => !v)}
         onUndo={undo}
         onRedo={redo}
         canUndo={canUndo}
@@ -512,12 +682,17 @@ export default function App() {
         onToggle={togglePart}
         selected={selected}
         onSelect={setSelected}
+        onFramePart={handleFramePart}
         isOpen={mobileSidebarOpen}
         onClose={() => setMobileSidebarOpen(false)}
         selectedVariants={selectedVariants}
         activePreset={activePreset}
         onApplyPreset={applyPreset}
         factoryMode={factoryMode}
+        ifc={ifc}
+        darkMode={darkMode}
+        onToggleDark={() => setDarkMode(v => !v)}
+        onToggleShortcuts={() => setShowShortcuts(v => !v)}
       />
 
       <Scene
@@ -558,9 +733,11 @@ export default function App() {
         fireMode={fireMode}
         fireState={fireState}
         fireIntensity={fireIntensity}
-        onIgnite={handleIgnite}
+        onFireClick={handleFireClick}
         showFireCompartments={showFireCompartments}
-        selectedVariants={selectedVariants}
+        selectedId={selected?.id ?? null}
+        darkMode={darkMode}
+        recording={recording}
         onRendererReady={gl => { rendererRef.current = gl }}
         cinematicMode={cinematicMode}
         onCinematicEnd={() => setCinematicMode(false)}
@@ -573,13 +750,10 @@ export default function App() {
 
       <InfoPanel
         selected={selected}
+        onClearSelected={() => setSelected(null)}
+        onFramePart={handleFramePart}
         selectedVariants={selectedVariants}
         onVariantChange={setVariant}
-        sequenceMode={sequenceMode}
-        sequenceStep={sequenceStep}
-        maxStep={maxStep}
-        onStepForward={stepForward}
-        onStepBack={stepBack}
         sectionCutActive={sectionCutActive}
         sectionCutY={sectionCutY}
         onSectionCutY={setSectionCutY}
@@ -587,6 +761,23 @@ export default function App() {
         setEnvSettings={setEnvSettings}
         showAcoustic={showAcoustic}
       />
+
+      {sequenceMode && !cinematicMode && (
+        <SequencePlayer
+          parts={sortedParts}
+          step={sequenceStep}
+          maxStep={maxStep}
+          playing={seqPlaying}
+          speed={seqSpeed}
+          onTogglePlay={toggleSeqPlay}
+          onStep={stepSequence}
+          onSeek={seekSequence}
+          onSpeed={setSeqSpeed}
+          onExit={toggleSequenceMode}
+          recording={recording}
+          onToggleRecord={toggleRecording}
+        />
+      )}
 
       {showMetrics && (
         <MetricsPanel
@@ -657,6 +848,8 @@ export default function App() {
 
       <ViewCube onPreset={handleCameraPreset} darkMode={darkMode} />
 
+      {celebration && <Celebration event={celebration} onDone={clearCelebration} />}
+      <DropOverlay onFile={ifc.importFile} />
     </div>
   )
 }

@@ -1,9 +1,20 @@
 import { useRef, useEffect, useState, useMemo, memo } from 'react'
-import { Edges, Html } from '@react-three/drei'
+import { Html } from '@react-three/drei'
 import { gsap } from 'gsap'
 import * as THREE from 'three'
 import { acousticColor, inferStcRating } from '../utils/materialMetrics'
 import { useIfcGeometry } from '../utils/ifcGeometryStore'
+import { noRaycast, useEdges } from '../utils/edges'
+import { markShadowsDirty } from '../utils/shadowSync'
+
+const SELECT_COLOR = '#2e86de'
+
+// Stable small number per id: which way a damaged part leans.
+function leanSign(id) {
+  let h = 0
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) | 0
+  return h & 1 ? 1 : -1
+}
 
 // One imported IFC part (or group of elements).
 // Renders its real mesh; falls back to a box from `size` while the mesh loads
@@ -12,6 +23,8 @@ function Part({
   data,
   isExploded,
   isVisible,
+  isSelected,
+  showEdges,
   onSelect,
   onFrame,
   activeVariant,
@@ -20,18 +33,28 @@ function Part({
   sectionCutActive,
   sectionCutY,
   isShaking,
+  hasShaken,
+  inQuakeCheck,
   earthquakeMagnitude,
   highlightedWeek,
   showAcoustic,
   fireMode,
   fireStatus,
-  onIgnite,
+  onFireClick,
   compactLabels,
 }) {
   const meshRef = useRef()
   const [hovered, setHovered] = useState(false)
   const prevSequenceStep = useRef(-1)
   const ifcGeometry = useIfcGeometry(data.shape === 'ifc' ? data.ifcGeometry : null)
+  const [sx, sy, sz] = data.size
+  const boxGeometry = useMemo(
+    () => (ifcGeometry ? null : new THREE.BoxGeometry(sx, sy, sz)),
+    [ifcGeometry, sx, sy, sz]
+  )
+  useEffect(() => () => boxGeometry?.dispose(), [boxGeometry])
+  const geometry = ifcGeometry ?? boxGeometry
+  const edges = useEdges(showEdges ? geometry : null, ifcGeometry ? 30 : 15)
 
   const baseColor = activeVariant?.color ?? data.variants[0].color
   const stcRating = inferStcRating(activeVariant)
@@ -130,6 +153,32 @@ function Part({
     }
   }, [isShaking])
 
+  // ── Earthquake damage: failed structure leans and settles ─
+  // Only the structure the verdict checks (utils/seismic.js) flashes or fails.
+  const seismicGrade = activeVariant?.seismic_grade ?? 1
+  const damaged = !!hasShaken && !isShaking && inQuakeCheck && !sequenceMode && !isExploded
+    && earthquakeMagnitude > seismicGrade * 3
+  useEffect(() => {
+    const mesh = meshRef.current
+    if (!mesh) return
+    if (damaged) {
+      // About 10 cm at the ends whatever the size: a long beam must not swing through the slab.
+      const lean = leanSign(data.id) * Math.min(0.07, 0.22 / Math.max(...data.size))
+      const drop = Math.min(0.12, data.size[1] * 0.05)
+      gsap.to(mesh.rotation, { z: lean, x: lean * 0.4, duration: 0.9, delay: 0.25, ease: 'bounce.out' })
+      gsap.to(mesh.position, { y: data.pos[1] - drop, duration: 0.9, delay: 0.25, ease: 'bounce.out' })
+      return () => {
+        gsap.to(mesh.rotation, { x: 0, z: 0, duration: 0.5, ease: 'expo.out' })
+        gsap.to(mesh.position, { y: data.pos[1], duration: 0.5, ease: 'expo.out' })
+      }
+    }
+  }, [damaged])
+
+  // A mesh arriving from IndexedDB or a visibility change moves its shadow.
+  const seqVisible = !sequenceMode || sequenceStep >= data.sequence
+  const finalVisible = isVisible && seqVisible
+  useEffect(() => { markShadowsDirty() }, [geometry, finalVisible])
+
   // ── Pointer cursor ───────────────────────────────────────
   useEffect(() => {
     document.body.style.cursor = hovered ? 'pointer' : 'auto'
@@ -138,13 +187,13 @@ function Part({
 
   function handleDoubleClick(e) {
     e.stopPropagation()
-    onFrame?.({ pos: data.pos, size: data.size })
+    onFrame?.({ pos: data.pos, size: data.size, pad: 1.8 })
   }
 
   function handleClick(e) {
     e.stopPropagation()
     if (fireMode) {
-      onIgnite?.(data.id)
+      onFireClick?.(data.id)
       return
     }
     gsap.fromTo(
@@ -155,32 +204,34 @@ function Part({
     onSelect({ ...data, meta: activeVariant?.meta ?? data.variants[0].meta })
   }
 
-  // ── Visibility ───────────────────────────────────────────
-  const seqVisible = !sequenceMode || sequenceStep >= data.sequence
-  const finalVisible = isVisible && seqVisible
-
   // ── Material properties ──────────────────────────────────
-  const seismicGrade = activeVariant?.seismic_grade ?? 1
-  const shakeAtRisk = isShaking && earthquakeMagnitude != null && earthquakeMagnitude > seismicGrade * 2.2
+  const shakeAtRisk = isShaking && inQuakeCheck && earthquakeMagnitude != null && earthquakeMagnitude > seismicGrade * 2.2
   const partWeek = data.week ?? Math.ceil((data.sequence ?? 1) / 2)
   const isWeekHighlighted = highlightedWeek != null && partWeek === highlightedWeek
   const isWeekDimmed = highlightedWeek != null && partWeek !== highlightedWeek
   const emissive = fireStatus === 'burning' ? '#ff6600'
     : fireStatus === 'failed' ? '#330000'
-    : shakeAtRisk ? '#e74c3c'
+    : fireStatus === 'out' ? '#1f78b4'
+    : shakeAtRisk || damaged ? '#e74c3c'
     : isWeekHighlighted ? '#3498db'
+    : isSelected ? SELECT_COLOR
     : showAcoustic ? acousticTint
     : color
   const emissiveIntensity = fireStatus === 'burning' ? 1.2
     : fireStatus === 'failed' ? 0.6
-    : shakeAtRisk ? 0.8 : isWeekHighlighted ? 0.5 : showAcoustic ? 0.35 : (hovered ? 0.25 : 0)
+    : fireStatus === 'out' ? 0.3
+    : shakeAtRisk ? 0.8 : damaged ? 0.45
+    : isWeekHighlighted ? 0.5
+    : isSelected ? 0.32
+    : showAcoustic ? 0.35 : (hovered ? 0.25 : 0)
   const opacity = fireStatus === 'failed' ? 0.6 : isWeekDimmed ? 0.25 : 1
   const transparent = isWeekDimmed || fireStatus === 'failed'
-  const edgesColor = hovered ? '#ffffff' : 'black'
+  const edgeColor = isSelected ? SELECT_COLOR : hovered ? '#5dade2' : '#1d2731'
+  const edgeOpacity = isSelected ? 1 : hovered ? 0.9 : 0.3
 
   // ── Label ────────────────────────────────────────────────
   const showNormalLabel = hovered || (isExploded && !compactLabels) || (sequenceMode && sequenceStep === data.sequence)
-  const showAcousticLabel = showAcoustic && finalVisible
+  const showAcousticLabel = showAcoustic && finalVisible && !compactLabels
   const showLabel = showNormalLabel || showAcousticLabel
   const labelText = showAcousticLabel && !showNormalLabel ? `STC ${stcRating}` : data.id
   const labelY = data.size[1] / 2 + 0.25
@@ -197,11 +248,10 @@ function Part({
       castShadow
       receiveShadow
     >
-      {ifcGeometry
-        ? <primitive object={ifcGeometry} attach="geometry" dispose={null} />
-        : <boxGeometry args={data.size} />}
+      {geometry && <primitive object={geometry} attach="geometry" dispose={null} />}
       <meshStandardMaterial
         color={color}
+        roughness={0.82}
         transparent={transparent}
         opacity={opacity}
         emissive={emissive}
@@ -209,11 +259,25 @@ function Part({
         clippingPlanes={clippingPlanes}
         clipShadows
         side={ifcGeometry ? THREE.DoubleSide : THREE.FrontSide}
+        // Push faces back a hair so outlines draw on top without flicker.
+        polygonOffset
+        polygonOffsetFactor={1}
+        polygonOffsetUnits={1}
       />
-      <Edges threshold={ifcGeometry ? 30 : 15} color={edgesColor} />
+      {edges && (
+        <lineSegments geometry={edges} raycast={noRaycast} dispose={null}>
+          <lineBasicMaterial
+            color={edgeColor}
+            transparent
+            opacity={edgeOpacity}
+            depthWrite={false}
+            clippingPlanes={clippingPlanes}
+          />
+        </lineSegments>
+      )}
 
       {showLabel && (
-        <Html position={[0, labelY, 0]} center distanceFactor={9} style={{ pointerEvents: 'none' }}>
+        <Html position={[0, labelY, 0]} center style={{ pointerEvents: 'none' }}>
           <div className="part-label">{labelText}</div>
         </Html>
       )}

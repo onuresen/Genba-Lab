@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef } from 'react'
 import { Html, Line } from '@react-three/drei'
 import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
+import { seismicParts } from '../utils/seismic'
 
 function riskForPart(part, selectedVariants, magnitude, hasShaken) {
   const variant = part.variants?.[selectedVariants?.[part.id] ?? 0]
@@ -71,8 +72,9 @@ function FaultLines({ magnitude, active }) {
 // Text labels only while few parts are at risk; spheres always (Html reprojects every frame).
 const STRESS_LABEL_LIMIT = 30
 
-function StressMarkers({ parts, visible, selectedVariants, magnitude, hasShaken }) {
-  const atRisk = parts
+function StressMarkers({ parts, visible, selectedVariants, magnitude, hasShaken, unit }) {
+  // Same set as the verdict: structure only (windows and doors are not checked).
+  const atRisk = seismicParts(parts)
     .filter(part => visible?.[part.id] !== false)
     .map(part => ({ part, risk: riskForPart(part, selectedVariants, magnitude, hasShaken) }))
     .filter(r => r.risk !== 'safe')
@@ -81,16 +83,16 @@ function StressMarkers({ parts, visible, selectedVariants, magnitude, hasShaken 
     <group>
       {atRisk.map(({ part, risk }) => {
           const [x, y, z] = part.pos
-          const top = y + (part.size?.[1] ?? 1) / 2 + 0.55
+          const top = y + (part.size?.[1] ?? 1) / 2 + 0.55 * unit
           const color = risk === 'critical' ? '#e74c3c' : '#f39c12'
           return (
             <group key={part.id} position={[x, top, z]}>
-              <mesh>
+              <mesh scale={unit}>
                 <sphereGeometry args={[0.12, 12, 8]} />
                 <meshBasicMaterial color={color} transparent opacity={0.82} depthWrite={false} />
               </mesh>
               {showLabels && (
-                <Html position={[0, 0.28, 0]} center distanceFactor={9} style={{ pointerEvents: 'none' }}>
+                <Html position={[0, 0.28 * unit, 0]} center style={{ pointerEvents: 'none' }}>
                   <div className={`eq-stress-label eq-stress-label--${risk}`}>
                     {risk === 'critical' ? 'CRITICAL' : 'STRESS'}
                   </div>
@@ -103,11 +105,12 @@ function StressMarkers({ parts, visible, selectedVariants, magnitude, hasShaken 
   )
 }
 
-function CameraRumble({ active, magnitude }) {
-  const { camera } = useThree()
+function CameraRumble({ active, magnitude, unit }) {
+  const get = useThree(s => s.get)
   const base = useRef(null)
 
   useEffect(() => {
+    const { camera } = get()
     if (active && !base.current) base.current = camera.position.clone()
     if (!active && base.current) {
       camera.position.copy(base.current)
@@ -116,11 +119,11 @@ function CameraRumble({ active, magnitude }) {
     return () => {
       if (base.current) camera.position.copy(base.current)
     }
-  }, [active, camera])
+  }, [active, get])
 
-  useFrame(({ clock }) => {
+  useFrame(({ clock, camera }) => {
     if (!active || !base.current) return
-    const amp = Math.min(0.16, magnitude * 0.012)
+    const amp = Math.min(0.16, magnitude * 0.012) * unit
     const t = clock.elapsedTime
     camera.position.x = base.current.x + Math.sin(t * 42) * amp + Math.sin(t * 17) * amp * 0.45
     camera.position.y = base.current.y + Math.sin(t * 33) * amp * 0.35
@@ -146,7 +149,7 @@ export default function EarthquakeEffects({
   const showStress = isShaking || hasShaken
   return (
     <group>
-      <CameraRumble active={isShaking} magnitude={magnitude} />
+      <CameraRumble active={isShaking} magnitude={magnitude} unit={k} />
       {(isShaking || hasShaken) && (
         <group position={[cx, 0, cz]} scale={[k, 1, k]}>
           <ShockwaveRings magnitude={magnitude} active={isShaking} />
@@ -160,6 +163,7 @@ export default function EarthquakeEffects({
           selectedVariants={selectedVariants}
           magnitude={magnitude}
           hasShaken={hasShaken}
+          unit={k}
         />
       )}
     </group>
