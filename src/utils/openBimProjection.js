@@ -45,29 +45,31 @@ function flattenPropertySets(propertySets) {
   return result
 }
 
+// Preallocated typed arrays: `push(...packet.positions)` overflowed the call
+// stack on big Revit elements (hundreds of thousands of floats per packet).
 function mergeGeometry(packets) {
-  const positions = []
-  const normals = []
-  const indices = []
+  let nPos = 0, nIdx = 0
+  for (const packet of packets) { nPos += packet.positions.length; nIdx += packet.indices.length }
+  const positions = new Float32Array(nPos)
+  const normals = new Float32Array(nPos)
+  const indices = new Uint32Array(nIdx)
   let colour = '#b0b0b0'
   let largestTriangleCount = -1
+  let p = 0, q = 0
   for (const packet of packets) {
-    const offset = positions.length / 3
-    positions.push(...packet.positions)
-    normals.push(...packet.normals)
-    for (const index of packet.indices) indices.push(index + offset)
+    const offset = p / 3
+    positions.set(packet.positions, p)
+    normals.set(packet.normals, p)
+    for (let i = 0; i < packet.indices.length; i++) indices[q + i] = packet.indices[i] + offset
+    p += packet.positions.length
+    q += packet.indices.length
     const triangleCount = packet.indices.length / 3
     if (triangleCount > largestTriangleCount) {
       largestTriangleCount = triangleCount
       colour = packet.colour
     }
   }
-  return {
-    color: colour,
-    positions: new Float32Array(positions),
-    normals: new Float32Array(normals),
-    indices: new Uint32Array(indices),
-  }
+  return { color: colour, positions, normals, indices }
 }
 
 export function projectOpenBimResultToGenba(result) {
