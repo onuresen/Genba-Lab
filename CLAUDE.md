@@ -94,9 +94,10 @@ Every simulation reads one array of **parts**. IFC import builds it (`ifcToKit.j
 | `sequenceMode`, `sequenceStep` | Assembly sequence |
 | `showMetrics`, `showDimensions`, `showConnections` (default off) | Overlays |
 | `sectionCutActive`, `sectionCutY` | Section cut |
-| `envSettings` `{ grass, time, clouds, stars, kenGrid }` | Environment |
+| `envSettings` `{ grass, time, clouds, stars, kenGrid, shadows, edges, focus }` | Environment (`focus`: focus on selection, default on) |
 | `factoryMode` | Prefab factory planner |
-| `cameraCmd` `{ type: 'preset'\|'frame', …, ts }` | Camera commands (change `ts` to re-fire) |
+| `cameraCmd` `{ type: 'preset'\|'frame'\|'focus'\|'restore', …, ts }` | Camera commands (change `ts` to re-fire) |
+| `focus` (derived) `{ subject, context:Set }` | Focus on selection; `null` while fire, quake, build, factory, tour, cab view or Gantt hover is on |
 | `darkMode` (localStorage `genba-lab-dark`), `showShortcuts`, `mobileSidebarOpen` | UI |
 | `showCrane`, `showCraneRadius`, `showSecondCrane`, `secondCraneX`, `liftPlanMode`, `liftStart`, `liftEnd`, `craneCabView` | Crane |
 | `showWindArrows`, `windSpeed`, `showWaterSim` | Wind + rain |
@@ -115,6 +116,12 @@ Real models are 20–100 m, not the 5 m Kit-of-Parts kit. Never hard-code world 
 - `utils/craneLayout.js`: crane position, jib, height, capacity from the model.
 - `utils/factoryLayout.js`: bay grid sized to the part count.
 - Scene passes `frame` to the camera, demo tour, earthquake ground effects, Ken grid and ground shadow.
+
+### Visual state and motion
+- `Part.jsx` never picks colours itself. `resolvePartVisual` decides, strongest first: fire > earthquake > selection > Gantt week > acoustic tint > hover > model colour. A selected or focused part is never dimmed. See-through parts don't write depth.
+- Focus on selection: the part and its direct neighbours stay solid, the rest fades to 12 %. The camera keeps its viewing direction and frames them. Clearing by the user (Esc, ground click, panel close) flies back to the earlier view, unless the camera moved since the flight landed. Other code that clears the selection (mode changes, model load) does not move the camera.
+- Any drag, zoom or click on the canvas stops a running camera flight (`OrbitControls onStart`). A drag that ends on the ground does not clear the selection.
+- `prefers-reduced-motion: reduce`: camera flights, explode and build moves become cuts; no part shake, camera rumble or click pulse; the demo tour cuts between views and keeps its timing. Results and colours are the same.
 
 ### Camera
 - `setCameraCmd({ type: 'preset', preset: 'front', ts: Date.now() })`. Presets: `front`, `back`, `top`, `bottom`, `right`, `left`, `home`.
@@ -185,6 +192,9 @@ Real models are 20–100 m, not the 5 m Kit-of-Parts kit. Never hard-code world 
 | `modelMetrics.js`, `craneLayout.js`, `factoryLayout.js` | Model-scale helpers (see Scale). |
 | `materialMetrics.js` | Default thermal / supply-risk / STC values and colours. |
 | `renderActivity.js` | Which effects need a continuous render loop. |
+| `partVisual.js` | `resolvePartVisual`: the one place that decides a part's tint, opacity and outline (see Visual state). |
+| `focus.js` | `focusContext` (part + direct neighbours, both directions), `focusRole`, `focusBounds`. |
+| `motion.js` | `prefersReducedMotion`, `motionDuration` (0 = a cut when motion is reduced). |
 
 ---
 
@@ -196,6 +206,12 @@ Real models are 20–100 m, not the 5 m Kit-of-Parts kit. Never hard-code world 
 - **Render:** no drei `<Edges>` (fat lines) on parts; no HDR download (in-scene Lightformers); sun shadows re-render only when something moves (`markShadowsDirty`). `recording` is a continuous-render reason.
 
 ## Key decisions
+
+- **Decision:** One resolver for part looks, focus on selection, reduced motion and input-interrupted camera flights (ported from CDI's IFC viewer work, 2026-10-27).
+  - **Why:** the old if-else chain in `Part.jsx` let a Gantt hover hide the selection, and every new effect would add another branch. Focus keeps orientation where a click only tinted the part.
+  - **Alternative:** hide unrelated parts (loses orientation), or fly back on every selection clear (fought the factory and model-load cameras).
+  - **Revisit when:** a simulation needs its own see-through state; add it to `resolvePartVisual`, not to `Part.jsx`.
+  - **Confidence:** med (ghost opacity and flight speed are taste; check on big Revit models)
 
 - **Decision:** Fire spreads one neighbour per tick with longer delays (non-rated 2.5 s / fail 9 s, 1hr 6 s / 22 s); clicking a burning part puts it out.
   - **Why:** the old rules burned a whole house in 4 s: nothing to see or play.

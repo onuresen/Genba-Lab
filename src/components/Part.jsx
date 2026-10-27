@@ -6,8 +6,8 @@ import { acousticColor, inferStcRating } from '../utils/materialMetrics'
 import { useIfcGeometry } from '../utils/ifcGeometryStore'
 import { noRaycast, useEdges } from '../utils/edges'
 import { markShadowsDirty } from '../utils/shadowSync'
-
-const SELECT_COLOR = '#2e86de'
+import { resolvePartVisual } from '../utils/partVisual'
+import { motionDuration, prefersReducedMotion } from '../utils/motion'
 
 // Stable small number per id: which way a damaged part leans.
 function leanSign(id) {
@@ -42,6 +42,7 @@ function Part({
   fireStatus,
   onFireClick,
   compactLabels,
+  focusRole,
 }) {
   const meshRef = useRef()
   const [hovered, setHovered] = useState(false)
@@ -74,7 +75,7 @@ function Part({
     const hasConnections = (data.connections ?? []).length > 0
     gsap.to(meshRef.current.position, {
       x: target[0], y: target[1], z: target[2],
-      duration: hasConnections ? 1.4 : 1,
+      duration: motionDuration(hasConnections ? 1.4 : 1),
       ease: hasConnections ? 'elastic.out(1, 0.5)' : 'expo.out',
     })
   }, [isExploded, sequenceMode])
@@ -84,7 +85,7 @@ function Part({
     if (!sequenceMode) {
       gsap.to(meshRef.current.position, {
         x: data.pos[0], y: data.pos[1], z: data.pos[2],
-        duration: 0.6, ease: 'expo.out',
+        duration: motionDuration(0.6), ease: 'expo.out',
       })
       prevSequenceStep.current = -1
       return
@@ -101,12 +102,12 @@ function Part({
       })
       gsap.to(meshRef.current.position, {
         x: data.pos[0], y: data.pos[1], z: data.pos[2],
-        duration: 1, ease: 'expo.out',
+        duration: motionDuration(1), ease: 'expo.out',
       })
     } else if (sequenceStep > mySeq) {
       gsap.to(meshRef.current.position, {
         x: data.pos[0], y: data.pos[1], z: data.pos[2],
-        duration: 0.5, ease: 'expo.out',
+        duration: motionDuration(0.5), ease: 'expo.out',
       })
     }
     prevSequenceStep.current = sequenceStep
@@ -114,7 +115,8 @@ function Part({
 
   // ── Earthquake shake ─────────────────────────────────────
   useEffect(() => {
-    if (!isShaking || !meshRef.current) return
+    // Reduced motion: no shaking. The verdict and damage still show.
+    if (!isShaking || !meshRef.current || prefersReducedMotion()) return
     const mesh = meshRef.current
     const baseX = mesh.position.x
     const baseY = mesh.position.y
@@ -165,8 +167,9 @@ function Part({
       // About 10 cm at the ends whatever the size: a long beam must not swing through the slab.
       const lean = leanSign(data.id) * Math.min(0.07, 0.22 / Math.max(...data.size))
       const drop = Math.min(0.12, data.size[1] * 0.05)
-      gsap.to(mesh.rotation, { z: lean, x: lean * 0.4, duration: 0.9, delay: 0.25, ease: 'bounce.out' })
-      gsap.to(mesh.position, { y: data.pos[1] - drop, duration: 0.9, delay: 0.25, ease: 'bounce.out' })
+      const d = motionDuration(0.9)
+      gsap.to(mesh.rotation, { z: lean, x: lean * 0.4, duration: d, delay: d && 0.25, ease: 'bounce.out' })
+      gsap.to(mesh.position, { y: data.pos[1] - drop, duration: d, delay: d && 0.25, ease: 'bounce.out' })
       return () => {
         gsap.to(mesh.rotation, { x: 0, z: 0, duration: 0.5, ease: 'expo.out' })
         gsap.to(mesh.position, { y: data.pos[1], duration: 0.5, ease: 'expo.out' })
@@ -196,11 +199,13 @@ function Part({
       onFireClick?.(data.id)
       return
     }
-    gsap.fromTo(
-      meshRef.current.scale,
-      { x: 1, y: 1, z: 1 },
-      { x: 1.05, y: 1.05, z: 1.05, duration: 0.1, yoyo: true, repeat: 1 }
-    )
+    if (!prefersReducedMotion()) {
+      gsap.fromTo(
+        meshRef.current.scale,
+        { x: 1, y: 1, z: 1 },
+        { x: 1.05, y: 1.05, z: 1.05, duration: 0.1, yoyo: true, repeat: 1 }
+      )
+    }
     onSelect({ ...data, meta: activeVariant?.meta ?? data.variants[0].meta })
   }
 
@@ -209,25 +214,18 @@ function Part({
   const partWeek = data.week ?? Math.ceil((data.sequence ?? 1) / 2)
   const isWeekHighlighted = highlightedWeek != null && partWeek === highlightedWeek
   const isWeekDimmed = highlightedWeek != null && partWeek !== highlightedWeek
-  const emissive = fireStatus === 'burning' ? '#ff6600'
-    : fireStatus === 'failed' ? '#330000'
-    : fireStatus === 'out' ? '#1f78b4'
-    : shakeAtRisk || damaged ? '#e74c3c'
-    : isWeekHighlighted ? '#3498db'
-    : isSelected ? SELECT_COLOR
-    : showAcoustic ? acousticTint
-    : color
-  const emissiveIntensity = fireStatus === 'burning' ? 1.2
-    : fireStatus === 'failed' ? 0.6
-    : fireStatus === 'out' ? 0.3
-    : shakeAtRisk ? 0.8 : damaged ? 0.45
-    : isWeekHighlighted ? 0.5
-    : isSelected ? 0.32
-    : showAcoustic ? 0.35 : (hovered ? 0.25 : 0)
-  const opacity = fireStatus === 'failed' ? 0.6 : isWeekDimmed ? 0.25 : 1
-  const transparent = isWeekDimmed || fireStatus === 'failed'
-  const edgeColor = isSelected ? SELECT_COLOR : hovered ? '#5dade2' : '#1d2731'
-  const edgeOpacity = isSelected ? 1 : hovered ? 0.9 : 0.3
+  const visual = resolvePartVisual({
+    color,
+    acousticTint: showAcoustic ? acousticTint : null,
+    fireStatus,
+    shakeAtRisk,
+    damaged,
+    weekHighlighted: isWeekHighlighted,
+    weekDimmed: isWeekDimmed,
+    selected: isSelected,
+    hovered,
+    focusRole,
+  })
 
   // ── Label ────────────────────────────────────────────────
   const showNormalLabel = hovered || (isExploded && !compactLabels) || (sequenceMode && sequenceStep === data.sequence)
@@ -252,10 +250,11 @@ function Part({
       <meshStandardMaterial
         color={color}
         roughness={0.82}
-        transparent={transparent}
-        opacity={opacity}
-        emissive={emissive}
-        emissiveIntensity={emissiveIntensity}
+        transparent={visual.transparent}
+        opacity={visual.opacity}
+        depthWrite={visual.depthWrite}
+        emissive={visual.emissive}
+        emissiveIntensity={visual.emissiveIntensity}
         clippingPlanes={clippingPlanes}
         clipShadows
         side={ifcGeometry ? THREE.DoubleSide : THREE.FrontSide}
@@ -267,9 +266,9 @@ function Part({
       {edges && (
         <lineSegments geometry={edges} raycast={noRaycast} dispose={null}>
           <lineBasicMaterial
-            color={edgeColor}
+            color={visual.edgeColor}
             transparent
-            opacity={edgeOpacity}
+            opacity={visual.edgeOpacity}
             depthWrite={false}
             clippingPlanes={clippingPlanes}
           />

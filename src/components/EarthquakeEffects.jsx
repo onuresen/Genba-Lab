@@ -3,6 +3,7 @@ import { Html, Line } from '@react-three/drei'
 import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
 import { seismicParts } from '../utils/seismic'
+import { prefersReducedMotion } from '../utils/motion'
 
 function riskForPart(part, selectedVariants, magnitude, hasShaken) {
   const variant = part.variants?.[selectedVariants?.[part.id] ?? 0]
@@ -149,7 +150,8 @@ export default function EarthquakeEffects({
   const showStress = isShaking || hasShaken
   return (
     <group>
-      <CameraRumble active={isShaking} magnitude={magnitude} unit={k} />
+      {/* Reduced motion: no camera shake; the rings and verdict still show. */}
+      <CameraRumble active={isShaking && !prefersReducedMotion()} magnitude={magnitude} unit={k} />
       {(isShaking || hasShaken) && (
         <group position={[cx, 0, cz]} scale={[k, 1, k]}>
           <ShockwaveRings magnitude={magnitude} active={isShaking} />

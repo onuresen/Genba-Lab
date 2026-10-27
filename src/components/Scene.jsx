@@ -26,6 +26,8 @@ import { factoryLayout } from '../utils/factoryLayout'
 import { markShadowsDirty, takeShadowsDirty } from '../utils/shadowSync'
 import { sunDirection } from '../utils/sun'
 import { seismicParts } from '../utils/seismic'
+import { focusRole } from '../utils/focus'
+import { motionDuration } from '../utils/motion'
 
 // ── GSAP → R3F invalidation bridge ─────────────────────────
 // In `frameloop="demand"` mode R3F only renders when a React prop changes or
@@ -79,15 +81,28 @@ function factoryView(layout) {
   return { pos: [0, Math.max(12, span * 1.05), layout.centerZ + Math.max(9, span * 0.75)], target: [0, 0, layout.centerZ] }
 }
 
+// Same view, give or take a hair: the user has not moved the camera since.
+function sameView(a, b) {
+  if (!a || !b) return false
+  const tol = 1e-3 * Math.max(1, Math.hypot(...a.pos.map((v, k) => v - a.target[k])))
+  return [0, 1, 2].every(k => Math.abs(a.pos[k] - b.pos[k]) < tol && Math.abs(a.target[k] - b.target[k]) < tol)
+}
+
 function CameraController({ factoryMode, controlsRef, cameraCmd, craneCabView, craneLayout, frame, factory }) {
   const { camera } = useThree()
+  // The view before a focus flight (for the return trip when the selection
+  // clears) and the view the flight landed on (to tell if the user moved since).
+  const savedViewRef = useRef(null)
+  const landedViewRef = useRef(null)
+  const currentView = () => ({ pos: camera.position.toArray(), target: controlsRef.current.target.toArray() })
 
-  function flyTo({ pos, target }, duration = 1.2) {
-    gsap.to(camera.position, { x: pos[0], y: pos[1], z: pos[2], duration, ease: 'expo.inOut' })
+  function flyTo({ pos, target }, duration = 1.2, onComplete) {
+    duration = motionDuration(duration)
+    gsap.to(camera.position, { x: pos[0], y: pos[1], z: pos[2], duration, ease: 'expo.inOut', overwrite: true, onComplete })
     if (controlsRef.current) {
       gsap.to(controlsRef.current.target, {
         x: target[0], y: target[1], z: target[2],
-        duration, ease: 'expo.inOut',
+        duration, ease: 'expo.inOut', overwrite: true,
         onUpdate: () => controlsRef.current?.update(),
       })
     }
@@ -105,10 +120,10 @@ function CameraController({ factoryMode, controlsRef, cameraCmd, craneCabView, c
       controlsRef.current.enabled = false
       // Operator cab: just above the jib, looking along it toward the model.
       const { x, z, jibY, jibLen } = craneLayout
-      gsap.to(camera.position, { x, y: jibY + 2, z: z - 1, duration: 1.2, ease: 'expo.inOut' })
+      gsap.to(camera.position, { x, y: jibY + 2, z: z - 1, duration: motionDuration(1.2), ease: 'expo.inOut' })
       gsap.to(controlsRef.current.target, {
         x: x - jibLen, y: jibY * 0.4, z,
-        duration: 1.2, ease: 'expo.inOut',
+        duration: motionDuration(1.2), ease: 'expo.inOut',
         onUpdate: () => controlsRef.current?.update(),
       })
     } else {
@@ -121,27 +136,51 @@ function CameraController({ factoryMode, controlsRef, cameraCmd, craneCabView, c
   // Declared after the mode / cab-view effects so a pending command runs last
   // and overwrite:true cancels their default-view tweens.
   useEffect(() => {
-    if (!cameraCmd || !controlsRef.current) return
+    const controls = controlsRef.current
+    if (!cameraCmd || !controls) return
     let pos, target
+
+    const landed = landedViewRef.current
+    landedViewRef.current = null
+    if (cameraCmd.type === 'restore') {
+      // Back to the view before the focus, unless the user has moved since.
+      const saved = savedViewRef.current
+      savedViewRef.current = null
+      if (saved && sameView(landed, currentView())) flyTo(saved, 0.9)
+      return
+    }
+    if (cameraCmd.type === 'focus') {
+      // Keep the first saved view while hopping between parts; a user move starts over.
+      const moved = landed && !sameView(landed, currentView())
+      if (cameraCmd.fresh || !savedViewRef.current || moved) savedViewRef.current = currentView()
+    } else {
+      savedViewRef.current = null
+    }
 
     if (cameraCmd.type === 'preset') {
       const p = cameraViews(frame, camera.aspect)[cameraCmd.preset]
       if (!p) return
       pos = p.pos; target = p.target
-    } else if (cameraCmd.type === 'frame') {
+    } else if (cameraCmd.type === 'frame' || cameraCmd.type === 'focus') {
       const [px, py, pz] = cameraCmd.pos
       // Fit the box on screen, portrait phones included (unit view direction).
       const dist = fitDistance(cameraCmd.size, camera.fov, camera.aspect) * (cameraCmd.pad ?? 1)
-      pos = [px + dist * 0.61, py + dist * 0.51, pz + dist * 0.61]
+      if (cameraCmd.type === 'focus') {
+        // Keep the current viewing direction, so the building does not spin.
+        const dir = camera.position.clone().sub(controls.target)
+        if (dir.lengthSq() < 1e-6) dir.set(0.61, 0.51, 0.61)
+        dir.normalize().multiplyScalar(dist)
+        pos = [px + dir.x, py + dir.y, pz + dir.z]
+      } else {
+        pos = [px + dist * 0.61, py + dist * 0.51, pz + dist * 0.61]
+      }
       target = [px, py, pz]
+    } else {
+      return
     }
 
-    gsap.to(camera.position, { x: pos[0], y: pos[1], z: pos[2], duration: 1, ease: 'expo.inOut', overwrite: true })
-    gsap.to(controlsRef.current.target, {
-      x: target[0], y: target[1], z: target[2],
-      duration: 1, ease: 'expo.inOut', overwrite: true,
-      onUpdate: () => controlsRef.current?.update(),
-    })
+    if (cameraCmd.type === 'focus') flyTo({ pos, target }, 0.9, () => { landedViewRef.current = currentView() })
+    else flyTo({ pos, target }, 1)
     // `camera` too: drei's makeDefault camera replaces R3F's right after mount,
     // and a pending command must apply to the camera that actually renders.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -284,8 +323,16 @@ export default function Scene({
   showFireCompartments,
   darkMode,
   recording,
+  focus,
 }) {
   const controlsRef = useRef()
+  // A drag, zoom or click on the model stops a camera flight where it is.
+  const onControlsStart = () => {
+    const controls = controlsRef.current
+    if (controls) gsap.killTweensOf([controls.object.position, controls.target])
+  }
+  // A drag that ends on the ground is an orbit, not a click: keep the selection.
+  const onGroundClick = (e) => { if (e.delta <= 2) onClearSelect?.() }
   const { parts } = useKit()
   const craneLayout = useMemo(() => computeCraneLayout(parts), [parts])
   const frame = useMemo(() => modelFrame(parts), [parts])
@@ -344,7 +391,7 @@ export default function Scene({
       onCreated={({ gl }) => onRendererReady?.(gl)}
     >
       <PerspectiveCamera makeDefault position={[8, 8, 8]} fov={45} near={0.1} far={Math.max(2000, groundRadius * 3)} />
-      <OrbitControls ref={controlsRef} makeDefault enableDamping autoRotate={!!recording} autoRotateSpeed={0.6} />
+      <OrbitControls ref={controlsRef} makeDefault enableDamping autoRotate={!!recording} autoRotateSpeed={0.6} onStart={onControlsStart} />
       <GsapBridge />
       <ShadowSync />
       {diagnosticsEnabled && <RenderDiagnostics continuousReasons={continuousReasons} />}
@@ -405,6 +452,7 @@ export default function Scene({
             fireStatus={fireState?.[part.id] ?? 'ok'}
             onFireClick={onFireClick}
             compactLabels={compactLabels}
+            focusRole={focusRole(focus, part.id)}
           />
         )
       })}
@@ -428,7 +476,7 @@ export default function Scene({
 
       {/* Ground: fades into the horizon, receives the sun's shadows */}
       {!factoryMode && envSettings?.grass && (
-        <mesh position={[frame.center[0], -0.27, frame.center[2]]} rotation={[-Math.PI / 2, 0, 0]} onClick={onClearSelect} receiveShadow>
+        <mesh position={[frame.center[0], -0.27, frame.center[2]]} rotation={[-Math.PI / 2, 0, 0]} onClick={onGroundClick} receiveShadow>
           <circleGeometry args={[groundRadius, 96]} />
           <meshStandardMaterial color="#6f8f52" roughness={0.95} alphaMap={fadeTexture} transparent depthWrite={false} />
         </mesh>
@@ -441,7 +489,7 @@ export default function Scene({
 
       {/* Invisible click plane when the ground is off */}
       {!factoryMode && !envSettings?.grass && (
-        <mesh position={[0, -2, 0]} rotation={[-Math.PI / 2, 0, 0]} onClick={onClearSelect}>
+        <mesh position={[0, -2, 0]} rotation={[-Math.PI / 2, 0, 0]} onClick={onGroundClick}>
           <planeGeometry args={[groundSize, groundSize]} />
           <meshBasicMaterial transparent opacity={0} />
         </mesh>

@@ -21,6 +21,7 @@ import { estimateFloorArea } from './utils/modelMetrics'
 import { fireGradeOf, fireRoundResult, spreadFire } from './utils/fireSim'
 import { getSeismicScore, getVerdict, seismicParts } from './utils/seismic'
 import { canRecord, startCanvasRecording } from './utils/videoRecorder'
+import { focusBounds, focusContext } from './utils/focus'
 import './App.css'
 
 // Build playback: 1× places the whole model in about 45 s, whatever its size.
@@ -64,7 +65,7 @@ export default function App() {
   const [sectionCutActive, setSectionCutActive] = useState(false)
   const [sectionCutY, setSectionCutY] = useState(3.5)
 
-  const [envSettings, setEnvSettings] = useState({ grass: true, time: 14, clouds: false, stars: false, kenGrid: false, shadows: true, edges: true })
+  const [envSettings, setEnvSettings] = useState({ grass: true, time: 14, clouds: false, stars: false, kenGrid: false, shadows: true, edges: true, focus: true })
 
   const [factoryMode, setFactoryMode] = useState(false)
 
@@ -288,6 +289,37 @@ export default function App() {
     setCameraCmd({ type: 'frame', pos, size, pad, ts: Date.now() })
   }, [])
 
+  // ── Focus on select ─────────────────────────────────────
+  // The selected part and its direct neighbours stay solid; the rest fades.
+  // The camera frames them, and returns when the user clears the selection.
+  // Off while a simulation, build, tour or Gantt hover owns the view.
+  const focusActive = envSettings.focus !== false && !factoryMode && !sequenceMode && !cinematicMode
+    && !fireMode && !isShaking && !craneCabView && highlightedWeek == null
+  const selectedId = selected?.id ?? null
+  const focus = useMemo(
+    () => (focusActive ? focusContext(parts, selectedId) : null),
+    [focusActive, parts, selectedId]
+  )
+  const focusFlownRef = useRef(false)
+  useEffect(() => {
+    if (!focus) { focusFlownRef.current = false; return }
+    const box = focusBounds(parts, focus, { visible, exploded })
+    if (!box) return
+    setCameraCmd({ type: 'focus', ...box, pad: 1.5, fresh: !focusFlownRef.current, ts: Date.now() })
+    focusFlownRef.current = true
+    // Fly on a new subject only, not on every visibility or explode change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focus?.subject])
+
+  // Clearing by the user (Esc, ground click, close) also returns the camera.
+  const clearSelection = useCallback(() => {
+    setSelected(null)
+    if (focusFlownRef.current) {
+      focusFlownRef.current = false
+      setCameraCmd({ type: 'restore', ts: Date.now() })
+    }
+  }, [])
+
   // IFC models are often far bigger than the default camera view.
   // Frame the whole model once per imported model (also after reload).
   useEffect(() => {
@@ -475,7 +507,7 @@ export default function App() {
     if (e.key === 'Escape') {
       if (showShortcuts) setShowShortcuts(false)
       else if (showFloorPlan) setShowFloorPlan(false)
-      else if (selected) setSelected(null)
+      else if (selected) clearSelection()
       else if (showMetrics) setShowMetrics(false)
       return
     }
@@ -699,7 +731,7 @@ export default function App() {
         isExploded={sequenceMode ? false : exploded}
         visible={visible}
         onSelect={setSelected}
-        onClearSelect={() => setSelected(null)}
+        onClearSelect={clearSelection}
         selectedVariants={selectedVariants}
         sequenceMode={sequenceMode}
         sequenceStep={sequenceStep}
@@ -735,7 +767,8 @@ export default function App() {
         fireIntensity={fireIntensity}
         onFireClick={handleFireClick}
         showFireCompartments={showFireCompartments}
-        selectedId={selected?.id ?? null}
+        selectedId={selectedId}
+        focus={focus}
         darkMode={darkMode}
         recording={recording}
         onRendererReady={gl => { rendererRef.current = gl }}
@@ -750,7 +783,7 @@ export default function App() {
 
       <InfoPanel
         selected={selected}
-        onClearSelected={() => setSelected(null)}
+        onClearSelected={clearSelection}
         onFramePart={handleFramePart}
         selectedVariants={selectedVariants}
         onVariantChange={setVariant}
