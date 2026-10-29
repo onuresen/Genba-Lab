@@ -408,6 +408,11 @@ export default function InfoPanel({
                 <input type="checkbox" checked={envSettings.edges !== false}
                   onChange={e => setEnvSettings(s => ({ ...s, edges: e.target.checked }))} />
               </label>
+              <label className="ipr-env-row" title="Fade other parts and frame the selected part with its neighbours">
+                <span>Focus on selection</span>
+                <input type="checkbox" checked={envSettings.focus !== false}
+                  onChange={e => setEnvSettings(s => ({ ...s, focus: e.target.checked }))} />
+              </label>
               <label className="ipr-env-row">
                 <span>Ground</span>
                 <input type="checkbox" checked={envSettings.grass}

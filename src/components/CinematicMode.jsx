@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { useThree } from '@react-three/fiber'
 import { gsap } from 'gsap'
+import { prefersReducedMotion } from '../utils/motion'
 
 // Drives the camera through a scripted demo sequence.
 // Called from Scene when cinematicMode=true; calls onEnd when the tour finishes.
@@ -25,6 +26,15 @@ export default function CinematicMode({ active, controlsRef, onEnd, onSetExplode
     // Disable orbit controls for the duration
     if (controlsRef.current) controlsRef.current.enabled = false
 
+    // Reduced motion: each camera move becomes a cut, then holds for the same time.
+    const reduced = prefersReducedMotion()
+    const update = () => controlsRef.current?.update()
+    const camTo = (to, duration, ease) => reduced
+      ? tl.set(camera.position, to).to({}, { duration })
+      : tl.to(camera.position, { ...to, duration, ease })
+    const lookAt = (to, duration, ease) => reduced
+      ? tl.set(controlsRef.current.target, { ...to, onComplete: update }, '<')
+      : tl.to(controlsRef.current.target, { ...to, duration, ease, onUpdate: update }, '<')
     const tl = gsap.timeline({
       onComplete: () => {
         if (controlsRef.current) controlsRef.current.enabled = true
@@ -39,20 +49,20 @@ export default function CinematicMode({ active, controlsRef, onEnd, onSetExplode
       onSetSequenceMode(false)
       onSetShowMetrics(false)
     })
-    tl.to(camera.position, { ...P(10, 6, 10), duration: 2, ease: 'power2.inOut' })
+    camTo(P(10, 6, 10), 2, 'power2.inOut')
     if (controlsRef.current) {
-      tl.to(controlsRef.current.target, { ...T(0.2), duration: 2, ease: 'power2.inOut', onUpdate: () => controlsRef.current?.update() }, '<')
+      lookAt(T(0.2), 2, 'power2.inOut')
     }
 
     // ── Phase 2: Slow orbit while assembled ───────────────
-    tl.to(camera.position, { ...P(-10, 6, 10), duration: 4, ease: 'none' })
+    camTo(P(-10, 6, 10), 4, 'none')
     if (controlsRef.current) {
-      tl.to(controlsRef.current.target, { ...T(0.2), duration: 4, ease: 'none', onUpdate: () => controlsRef.current?.update() }, '<')
+      lookAt(T(0.2), 4, 'none')
     }
 
     // ── Phase 3: Explode ──────────────────────────────────
     tl.call(() => onSetExploded(true))
-    tl.to(camera.position, { ...P(12, 9, 12), duration: 1.5, ease: 'power2.inOut' })
+    camTo(P(12, 9, 12), 1.5, 'power2.inOut')
 
     // hold exploded view
     tl.to({}, { duration: 2.5 })
@@ -67,9 +77,9 @@ export default function CinematicMode({ active, controlsRef, onEnd, onSetExplode
       onSetSequenceMode(true)
       onSetSequenceStep(0)
     })
-    tl.to(camera.position, { ...P(8, 8, 8), duration: 1.2, ease: 'expo.inOut' })
+    camTo(P(8, 8, 8), 1.2, 'expo.inOut')
     if (controlsRef.current) {
-      tl.to(controlsRef.current.target, { ...T(0), duration: 1.2, ease: 'expo.inOut', onUpdate: () => controlsRef.current?.update() }, '<')
+      lookAt(T(0), 1.2, 'expo.inOut')
     }
 
     // Eight beats spread over the whole build, so big models show progress too.
@@ -86,18 +96,18 @@ export default function CinematicMode({ active, controlsRef, onEnd, onSetExplode
       onSetSequenceMode(false)
       onSetShowMetrics(true)
     })
-    tl.to(camera.position, { ...P(8, 8, 8), duration: 1, ease: 'expo.inOut' })
+    camTo(P(8, 8, 8), 1, 'expo.inOut')
 
     // hold metrics
     tl.to({}, { duration: 3 })
 
     // ── Phase 7: Final hero orbit ─────────────────────────
     tl.call(() => onSetShowMetrics(false))
-    tl.to(camera.position, { ...P(10, 7, 10), duration: 1.5, ease: 'power2.inOut' })
+    camTo(P(10, 7, 10), 1.5, 'power2.inOut')
     if (controlsRef.current) {
-      tl.to(controlsRef.current.target, { ...T(0.2), duration: 1.5, ease: 'power2.inOut', onUpdate: () => controlsRef.current?.update() }, '<')
+      lookAt(T(0.2), 1.5, 'power2.inOut')
     }
-    tl.to(camera.position, { ...P(-10, 7, -4), duration: 5, ease: 'none' })
+    camTo(P(-10, 7, -4), 5, 'none')
 
     return () => {
       tl.kill()
