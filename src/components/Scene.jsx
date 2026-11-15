@@ -8,13 +8,12 @@ import DimensionLines from './DimensionLines'
 import Connection from './Connection'
 import Crane from './Crane'
 import CinematicMode from './CinematicMode'
-import WindArrows from './WindArrows'
+import WindLoad from './WindLoad'
 import WaterFlow from './WaterFlow'
 import FireCompartments from './FireCompartments'
 import ThermalOverlay from './ThermalOverlay'
 import FactoryGrid from './FactoryGrid'
 import FireEffects from './FireEffects'
-import WindStreamlines from './WindStreamlines'
 import EarthquakeEffects from './EarthquakeEffects'
 import { useKit } from './KitContext'
 import RenderDiagnostics from './RenderDiagnostics'
@@ -307,6 +306,9 @@ export default function Scene({
   secondCraneX,
   showWindArrows,
   windSpeed,
+  windDir,
+  windTerrain,
+  onWindResult,
   showWaterSim,
   rainfall,
   onWaterResult,
@@ -558,10 +560,7 @@ export default function Scene({
       })()}
 
       {!factoryMode && showWindArrows && (
-        <>
-          <WindStreamlines parts={parts} visible={visible} windSpeed={windSpeed ?? 8} />
-          <WindArrows parts={parts} visible={visible} windSpeed={windSpeed ?? 8} frame={frame} />
-        </>
+        <WindLoad parts={parts} visible={visible} windSpeed={windSpeed} windDir={windDir} terrain={windTerrain} onResult={onWindResult} />
       )}
 
       {!factoryMode && showWaterSim && (

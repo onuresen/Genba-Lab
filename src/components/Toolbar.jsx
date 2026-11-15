@@ -118,7 +118,7 @@ export default function Toolbar({
 
         <Group label="Simulate">
           <ToolButton {...t} icon={Activity} label="Earthquake" hint="Shake the model by magnitude" keyName="Q" active={showEarthquake} onClick={onToggleEarthquake} disabled={factoryMode} />
-          <ToolButton {...t} icon={Wind} label="Wind" hint="Pressure arrows and streamlines" keyName="W" active={showWindArrows} onClick={onToggleWindArrows} disabled={factoryMode} />
+          <ToolButton {...t} icon={Wind} label="Wind" hint="Wind load on the model (BSL)" keyName="W" active={showWindArrows} onClick={onToggleWindArrows} disabled={factoryMode} />
           <ToolButton {...t} icon={Droplets} label="Rain" hint="Rain and water flow on the model" keyName="R" active={showWaterSim} onClick={onToggleWaterSim} disabled={factoryMode} />
           <ToolButton {...t} icon={Flame} label="Fire" hint="Start a fire, then put it out" keyName="I" active={fireMode} danger onClick={onToggleFireMode} disabled={factoryMode} />
           <ToolButton {...t} icon={Shield} label="Fire compartments" hint="Storeys vs the 500 m² limit" active={showFireCompartments} onClick={onToggleFireCompartments} disabled={factoryMode} />

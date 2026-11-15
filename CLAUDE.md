@@ -101,7 +101,7 @@ Every simulation reads one array of **parts**. IFC import builds it (`ifcToKit.j
 | `focus` (derived) `{ subject, context:Set }` | Focus on selection; `null` while fire, quake, build, factory, tour, cab view or Gantt hover is on |
 | `darkMode` (localStorage `genba-lab-dark`), `showShortcuts`, `mobileSidebarOpen` | UI |
 | `showCrane`, `showCraneRadius`, `showSecondCrane`, `secondCraneX`, `liftPlanMode`, `liftStart`, `liftEnd`, `craneCabView` | Crane |
-| `showWindArrows`, `windSpeed` | Wind |
+| `showWindArrows` (wind sim on), `windSpeed` (BSL V0, m/s), `windDir` (from, deg), `windTerrain`, `windResult` | Wind |
 | `showWaterSim`, `rainfall` (mm/h), `waterResult` | Rain & water flow |
 | `showThermal`, `showAcoustic` | Material overlays |
 | `fireMode`, `fireState`, `fireElapsed`, `fireIntensity`, `showFireCompartments` | Fire |
@@ -159,7 +159,7 @@ Real models are 20–100 m, not the 5 m Kit-of-Parts kit. Never hard-code world 
 | `CinematicMode.jsx` | Scripted demo tour, scaled by `frame`. |
 | `FactoryGrid.jsx` | Prefab bay planner: real meshes, transport-size/weight/lead-time warnings, drag to resequence. |
 | `DimensionLines.jsx` | Model width/height/depth. |
-| `WindArrows.jsx`, `WindStreamlines.jsx` | Wind pressure arrows + streamlines. |
+| `WindLoad.jsx` | Wind on real surfaces: pressure heat map (blue in / red out), pressure arrows, streamlines around the model, peak labels. |
 | `WaterFlow.jsx` | Rain runoff on real surfaces: flow lines, moving droplets, ponds, drip zones, rain streaks. Recomputes on visibility / rainfall change. |
 | `FireEffects.jsx`, `FireCompartments.jsx` | Fire visuals; compartment boxes by storey vs BSL 500 m². |
 | `EarthquakeEffects.jsx` | Camera rumble, ground rings/faults (scaled), stress markers. |
@@ -178,8 +178,9 @@ Real models are 20–100 m, not the 5 m Kit-of-Parts kit. Never hard-code world 
 | `AIOptimiserPanel.jsx` | Lowest-carbon variant per part that keeps the seismic grade. |
 | `SupplyRiskPanel.jsx` | Lead-time risk, shortage simulation. |
 | `GanttPanel.jsx` | Schedule by week; highlights parts in 3D. |
-| `CranePanel.jsx` | Crane specs, live lift load, wind, lift path planner, cab view, second crane. |
+| `CranePanel.jsx` | Crane specs, live lift load, wind (gusty demo, or the wind sim's speed at jib height), lift path planner, cab view, second crane. |
 | `EarthquakePanel.jsx`, `FirePanel.jsx` | Simulation controls + verdicts. |
+| `WindPanel.jsx` | V0 + presets (to super typhoon 46), direction (8), terrain; top speed, push (base shear), peak pressure/suction, overturning, force by height, parts lifted more than their weight. |
 | `RainPanel.jsx` | Rainfall (mm/h, presets up to ゲリラ豪雨 100), catchment, runoff, pond/ground/drain shares, where water collects. |
 | `FloorPlanPanel.jsx` | 2D plan, SVG export. |
 | `ShortcutsModal.jsx`, `ShareButton.jsx` | Shortcuts (E D L M X F S 0-3 ?), screenshot share. |
@@ -193,6 +194,7 @@ Real models are 20–100 m, not the 5 m Kit-of-Parts kit. Never hard-code world 
 | `ifcImport.js`, `../workers/ifcWorker.js` | Browser import pipeline. |
 | `ifcGeometryStore.js` | Mesh store (memory + IndexedDB `genba-lab-meshes`), `useIfcGeometry`, `getCachedGeometry` (non-hook read for simulations). |
 | `worldMesh.js` | `partWorldEntries`: world-space triangles of visible parts (assembled positions) for raycast simulations. |
+| `windLoad.js` | Wind engine: BSL `heightFactor`, `gustFactor`, `velocityPressure`, `windVector`, `computeWindLoad`, `windStreamlines`. Pure, tested. |
 | `waterFlow.js` | Runoff engine (three-mesh-bvh): `buildCollisionMesh`, `traceDrop`, `simulateRunoff`, `isDrainPart`. Pure, tested. |
 | `modelMetrics.js`, `craneLayout.js`, `factoryLayout.js` | Model-scale helpers (see Scale). |
 | `materialMetrics.js` | Default thermal / supply-risk / STC values and colours. |
@@ -210,6 +212,17 @@ Real models are 20–100 m, not the 5 m Kit-of-Parts kit. Never hard-code world 
 - **Keys:** B build, Space/←/→ in build, C crane, Q quake, W wind, R rain & water flow, I fire, T thermal, A acoustics, P plan (plus the old ones).
 - **Render:** no drei `<Edges>` (fat lines) on parts; no HDR download (in-scene Lightformers); sun shadows re-render only when something moves (`markShadowsDirty`). `recording` is a continuous-render reason.
 
+## Wind
+
+- BSL method, simplified (告示1454): Er(z) = 1.7 (max(z, Zb)/ZG)^α, q = 0.6 Er² Gf V0². Terrain II/III/IV = open/suburban/city.
+- Cp: windward +0.8 (q at its height), leeward −0.4, side −0.7, flat roof −1.0, steep windward roof +0.3, sheltered −0.3 (q at the top).
+- Per triangle of the merged mesh. Skipped: undersides, faces touching or inside another part (ray parity per part), roofs with something above.
+- Windward faces with something upwind are sheltered.
+- Outputs: base shear, overturning, peak pressure/suction, force by height (10 bands), force per part (uplift vs weight).
+- Streamlines: march downwind; when blocked, step up or sideways; drift back once clear. Reduced motion: beads hold still.
+- North = −Z of the model. Indicative: no wind tunnel, no internal pressure.
+- Sim panels (crane, rain, fire, earthquake, wind) live in `.sim-dock` (bottom-right stack).
+
 ## Rain & water flow
 
 - Rain falls straight down on a grid (≤ 2500 samples) over the visible model; first surface hit = landing.
@@ -223,6 +236,11 @@ Real models are 20–100 m, not the 5 m Kit-of-Parts kit. Never hard-code world 
 
 ## Key decisions
 
+- **Decision:** Wind load uses the BSL formula on the real mesh, with ray-based shelter.
+  - **Why:** Real numbers (kN, kPa) a Japanese engineer recognises, on any IFC, in about a second.
+  - **Alternative:** CFD. Rejected: far too slow for the browser.
+  - **Revisit when:** tall or odd-shaped buildings need real Cp (wind tunnel data).
+  - **Confidence:** med
 - **Decision:** Water flow is a raycast drop tracer on the real meshes (three-mesh-bvh), not a fluid solver.
   - **Why:** Shows where water lands, flows and collects on any IFC in < 0.2 s. A fluid solver would be slow and need a watertight mesh.
   - **Alternative:** Heightfield / shallow-water grid. Deferred: loses overhangs and multi-level roofs.
