@@ -8,6 +8,7 @@ import { noRaycast, useEdges } from '../utils/edges'
 import { markShadowsDirty } from '../utils/shadowSync'
 import { resolvePartVisual } from '../utils/partVisual'
 import { motionDuration, prefersReducedMotion } from '../utils/motion'
+import { quakeCompile, quakeCacheKey } from '../utils/quakeDeform'
 
 // Stable small number per id: which way a damaged part leans.
 function leanSign(id) {
@@ -34,8 +35,7 @@ function Part({
   sectionCutY,
   isShaking,
   hasShaken,
-  inQuakeCheck,
-  earthquakeMagnitude,
+  quakeLevel, // storey damage level (structure only), from utils/seismic
   highlightedWeek,
   showAcoustic,
   fireMode,
@@ -114,52 +114,15 @@ function Part({
   }, [sequenceMode, sequenceStep])
 
   // ── Earthquake shake ─────────────────────────────────────
-  useEffect(() => {
-    // Reduced motion: no shaking. The verdict and damage still show.
-    if (!isShaking || !meshRef.current || prefersReducedMotion()) return
-    const mesh = meshRef.current
-    const baseX = mesh.position.x
-    const baseY = mesh.position.y
-    const baseZ = mesh.position.z
-    const baseRotZ = mesh.rotation.z
-    const seismicGrade = activeVariant?.seismic_grade ?? 1
-    const hasBaseIso = (data.connections ?? []).some(c => c.type === 'base-isolation')
-    const isoFactor = hasBaseIso ? 0.15 : 1
-    const amplitude = (earthquakeMagnitude ?? 5) * 0.055 * (1 / seismicGrade) * isoFactor
-    const cycles = Math.round((earthquakeMagnitude ?? 5) * 4)
-    const tl = gsap.timeline({
-      onComplete: () => {
-        gsap.to(mesh.position, { x: baseX, y: baseY, z: baseZ, duration: 0.4, ease: 'expo.out' })
-        gsap.to(mesh.rotation, { z: baseRotZ, duration: 0.4, ease: 'expo.out' })
-      },
-    })
-    for (let i = 0; i < cycles; i++) {
-      const a = (i / cycles) * Math.PI * 4 + Math.random() * 0.5
-      tl.to(mesh.position, {
-        x: baseX + Math.cos(a) * amplitude * (1 - i / cycles * 0.5),
-        y: baseY + Math.abs(Math.sin(a * 1.3)) * amplitude * 0.18,
-        z: baseZ + Math.sin(a) * amplitude * (1 - i / cycles * 0.5),
-        duration: 0.07, ease: 'none',
-      }, '<')
-      tl.to(mesh.rotation, {
-        z: baseRotZ + Math.sin(a) * amplitude * 0.1,
-        duration: 0.07, ease: 'none',
-      }, '<')
-    }
-    tl.to(mesh.position, { x: baseX, y: baseY, z: baseZ, duration: 0.4, ease: 'expo.out' })
-    tl.to(mesh.rotation, { z: baseRotZ, duration: 0.4, ease: 'expo.out' }, '<')
-    return () => {
-      tl.kill()
-      gsap.to(mesh.position, { x: baseX, y: baseY, z: baseZ, duration: 0.2 })
-      gsap.to(mesh.rotation, { z: baseRotZ, duration: 0.2 })
-    }
-  }, [isShaking])
+  // Storeys sway in the vertex shader (utils/quakeDeform.js), driven by
+  // QuakePlayback from the storey time history. Reduced motion: no sway.
 
   // ── Earthquake damage: failed structure leans and settles ─
-  // Only the structure the verdict checks (utils/seismic.js) flashes or fails.
-  const seismicGrade = activeVariant?.seismic_grade ?? 1
-  const damaged = !!hasShaken && !isShaking && inQuakeCheck && !sequenceMode && !isExploded
-    && earthquakeMagnitude > seismicGrade * 3
+  // Only the structure the verdict checks (utils/seismic.js) flashes or fails:
+  // quakeLevel is null for windows, doors and coverings.
+  const quakeKey = quakeLevel?.key
+  const afterShake = !!hasShaken && !isShaking
+  const damaged = afterShake && quakeKey === 'collapse' && !sequenceMode && !isExploded
   useEffect(() => {
     const mesh = meshRef.current
     if (!mesh) return
@@ -210,7 +173,8 @@ function Part({
   }
 
   // ── Material properties ──────────────────────────────────
-  const shakeAtRisk = isShaking && inQuakeCheck && earthquakeMagnitude != null && earthquakeMagnitude > seismicGrade * 2.2
+  const shakeAtRisk = isShaking && (quakeKey === 'severe' || quakeKey === 'collapse')
+  const quakeTint = afterShake && quakeKey && quakeKey !== 'ok' ? quakeLevel.color : null
   const partWeek = data.week ?? Math.ceil((data.sequence ?? 1) / 2)
   const isWeekHighlighted = highlightedWeek != null && partWeek === highlightedWeek
   const isWeekDimmed = highlightedWeek != null && partWeek !== highlightedWeek
@@ -220,6 +184,7 @@ function Part({
     fireStatus,
     shakeAtRisk,
     damaged,
+    quakeTint,
     weekHighlighted: isWeekHighlighted,
     weekDimmed: isWeekDimmed,
     selected: isSelected,
@@ -262,6 +227,8 @@ function Part({
         polygonOffset
         polygonOffsetFactor={1}
         polygonOffsetUnits={1}
+        onBeforeCompile={quakeCompile}
+        customProgramCacheKey={quakeCacheKey}
       />
       {edges && (
         <lineSegments geometry={edges} raycast={noRaycast} dispose={null}>
@@ -271,6 +238,8 @@ function Part({
             opacity={visual.edgeOpacity}
             depthWrite={false}
             clippingPlanes={clippingPlanes}
+            onBeforeCompile={quakeCompile}
+            customProgramCacheKey={quakeCacheKey}
           />
         </lineSegments>
       )}

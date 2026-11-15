@@ -21,6 +21,13 @@ test('fire beats earthquake beats selection', () => {
   assert.equal(resolvePartVisual({ ...base, selected: true, weekHighlighted: true }).source, 'selection')
 })
 
+test('storey damage tints in its level colour, below a failure', () => {
+  const v = resolvePartVisual({ ...base, selected: true, quakeTint: '#f39c12' })
+  assert.equal(v.source, 'earthquake')
+  assert.equal(v.emissive, '#f39c12')
+  assert.equal(resolvePartVisual({ ...base, quakeTint: '#f39c12', damaged: true }).emissive, '#e74c3c')
+})
+
 test('a selected part keeps its outline during fire', () => {
   const v = resolvePartVisual({ ...base, selected: true, fireStatus: 'burning' })
   assert.equal(v.edgeColor, SELECT_COLOR)

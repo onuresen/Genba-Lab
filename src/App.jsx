@@ -22,7 +22,8 @@ import { computeCraneLayout, partBounds } from './utils/craneLayout'
 import { estimateFloorArea } from './utils/modelMetrics'
 import { windAt } from './utils/windLoad'
 import { fireGradeOf, fireRoundResult, spreadFire } from './utils/fireSim'
-import { getSeismicScore, getVerdict, seismicParts } from './utils/seismic'
+import { buildStoreyModel, simulateQuake, structureLevels } from './utils/seismic'
+import { prefersReducedMotion } from './utils/motion'
 import { canRecord, startCanvasRecording } from './utils/videoRecorder'
 import { focusBounds, focusContext } from './utils/focus'
 import './App.css'
@@ -135,7 +136,10 @@ export default function App() {
 
   // ── Earthquake ───────────────────────────────────────────
   const [showEarthquake, setShowEarthquake] = useState(false)
-  const [earthquakeMagnitude, setEarthquakeMagnitude] = useState(6.0)
+  const [quakePga, setQuakePga] = useState(0.35)         // peak ground acceleration (g)
+  const [quakeMotion, setQuakeMotion] = useState('near') // 'near' | 'far'
+  const [quakeSystem, setQuakeSystem] = useState('standard')
+  const [quakeDir, setQuakeDir] = useState('x')
   const [isShaking, setIsShaking] = useState(false)
   const [hasShaken, setHasShaken] = useState(false)
   const [earthquakeCountdown, setEarthquakeCountdown] = useState(null)
@@ -367,21 +371,40 @@ export default function App() {
   }, [showCrane])
 
   // ── Earthquake ───────────────────────────────────────────
-  function announceQuake(magnitude) {
-    const structure = seismicParts(parts)
-    const verdict = getVerdict(magnitude, structure, selectedVariants)
-    if (!verdict) return
-    const score = getSeismicScore(magnitude, structure, selectedVariants)
-    const m = magnitude.toFixed(1)
-    const n = verdict.parts.length
-    if (verdict.level === 'safe') celebrate({ title: `Survived M${m}!`, subtitle: `Seismic score ${score}/100 · no structural damage`, tone: 'win' })
-    else if (verdict.level === 'caution') celebrate({ title: 'Standing, but damaged', subtitle: `${n} part${n === 1 ? '' : 's'} at risk · score ${score}/100`, tone: 'warn' })
-    else celebrate({ title: 'Structural failure', subtitle: `${n} part${n === 1 ? '' : 's'} failed at M${m} · score ${score}/100`, tone: 'fail' })
+  // Storey model + response are computed up front; the playback only replays them.
+  const quakeModel = useMemo(
+    () => (showEarthquake && parts?.length ? buildStoreyModel(parts, selectedVariants, visible) : null),
+    [showEarthquake, parts, selectedVariants, visible],
+  )
+  const quakeResult = useMemo(
+    () => (quakeModel ? simulateQuake(quakeModel, { pga: quakePga, system: quakeSystem, type: quakeMotion }) : null),
+    [quakeModel, quakePga, quakeSystem, quakeMotion],
+  )
+  // Damage level per structural part (by storey). Parts show it during and after a shake.
+  const quakeLevels = useMemo(
+    () => structureLevels(parts ?? [], visible, quakeModel, quakeResult),
+    [parts, visible, quakeModel, quakeResult],
+  )
+  // New inputs: the old verdict no longer applies.
+  const quakeInputs = `${quakePga}|${quakeMotion}|${quakeSystem}|${quakeDir}`
+  const [shakenInputs, setShakenInputs] = useState(null)
+  const quakeDone = hasShaken && shakenInputs === quakeInputs
+
+  function announceQuake(result) {
+    const { worst } = result
+    const level = worst.level
+    const drift = worst.driftRatio > 0 ? `1/${Math.round(1 / worst.driftRatio)}` : '—'
+    const shindo = `${quakePga.toFixed(2)} g`
+    if (level.key === 'ok') celebrate({ title: `Survived ${shindo}!`, subtitle: `No damage · worst storey drift ${drift}`, tone: 'win' })
+    else if (level.key === 'minor') celebrate({ title: `Survived ${shindo}`, subtitle: `Minor cracks on ${worst.name} · drift ${drift}`, tone: 'win' })
+    else if (level.key === 'collapse') celebrate({ title: 'Collapse risk', subtitle: `${worst.name} · storey drift ${drift}`, tone: 'fail' })
+    else celebrate({ title: 'Standing, but damaged', subtitle: `${level.label} on ${worst.name} · drift ${drift}`, tone: 'warn' })
   }
 
   function handleShake() {
-    if (isShaking || earthquakeCountdown != null) return
-    const magnitude = earthquakeMagnitude
+    if (isShaking || earthquakeCountdown != null || !quakeResult) return
+    const result = quakeResult
+    const inputs = quakeInputs
     setHasShaken(false)
     setEarthquakeCountdown(3)
     let next = 3
@@ -391,11 +414,13 @@ export default function App() {
         clearInterval(countdownId)
         setEarthquakeCountdown(null)
         setIsShaking(true)
-        const duration = (magnitude * 0.35 + 1) * 1000
+        // The full ground motion plays out; reduced motion skips the wait (no sway to watch).
+        const duration = prefersReducedMotion() ? 1500 : result.duration * 1000 + 300
         setTimeout(() => {
           setIsShaking(false)
           setHasShaken(true)
-          announceQuake(magnitude)
+          setShakenInputs(inputs)
+          announceQuake(result)
         }, duration)
       } else {
         setEarthquakeCountdown(next)
@@ -767,8 +792,12 @@ export default function App() {
         showCraneRadius={showCraneRadius}
         currentPartWeight={currentPartWeight}
         isShaking={isShaking}
-        earthquakeMagnitude={earthquakeMagnitude}
-        hasShaken={hasShaken}
+        quakePga={quakePga}
+        quakeModel={quakeModel}
+        quakeResult={quakeResult}
+        quakeDir={quakeDir}
+        quakeLevels={quakeLevels}
+        hasShaken={quakeDone}
         highlightedWeek={highlightedWeek}
         showSecondCrane={showSecondCrane}
         secondCraneX={secondCraneX}
@@ -896,13 +925,20 @@ export default function App() {
 
         {showEarthquake && (
           <EarthquakePanel
-            magnitude={earthquakeMagnitude}
-            onMagnitude={setEarthquakeMagnitude}
+            pga={quakePga}
+            onPga={setQuakePga}
+            motion={quakeMotion}
+            onMotion={setQuakeMotion}
+            system={quakeSystem}
+            onSystem={setQuakeSystem}
+            dir={quakeDir}
+            onDir={setQuakeDir}
+            model={quakeModel}
+            result={quakeResult}
             isShaking={isShaking}
             countdown={earthquakeCountdown}
             onShake={handleShake}
-            hasShaken={hasShaken}
-            selectedVariants={selectedVariants}
+            hasShaken={quakeDone}
           />
         )}
 

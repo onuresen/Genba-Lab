@@ -18,6 +18,7 @@ export function resolvePartVisual({
   fireStatus = 'ok',
   shakeAtRisk = false,
   damaged = false,
+  quakeTint = null, // storey damage colour after a shake (utils/seismic DRIFT_LEVELS)
   weekHighlighted = false,
   weekDimmed = false,
   selected = false,
@@ -32,6 +33,7 @@ export function resolvePartVisual({
   else if (fireStatus === 'out') { emissive = '#1f78b4'; emissiveIntensity = 0.3; source = 'fire' }
   else if (shakeAtRisk) { emissive = '#e74c3c'; emissiveIntensity = 0.8; source = 'earthquake' }
   else if (damaged) { emissive = '#e74c3c'; emissiveIntensity = 0.45; source = 'earthquake' }
+  else if (quakeTint) { emissive = quakeTint; emissiveIntensity = 0.4; source = 'earthquake' }
   else if (selected) { emissive = SELECT_COLOR; emissiveIntensity = 0.32; source = 'selection' }
   else if (weekHighlighted) { emissive = '#3498db'; emissiveIntensity = 0.5; source = 'week' }
   else if (acousticTint) { emissive = acousticTint; emissiveIntensity = 0.35; source = 'acoustic' }

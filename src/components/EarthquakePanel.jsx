@@ -1,150 +1,167 @@
-import { useKit } from './KitContext'
-import { RICHTER_LABELS, getSeismicScore, getVerdict, gradeOf, seismicParts } from '../utils/seismic'
+// Earthquake panel: ground shaking, structure system, and the storey response.
+import { DRIFT_LEVELS, ISO_CLEARANCE_CM, MOTIONS, SYSTEMS, jmaIntensity, swayScale } from '../utils/seismic'
 
-const GRADE_COLOR = { 1: '#f39c12', 2: '#3498db', 3: '#27ae60' }
-const LIST_LIMIT = 8
+const PRESETS = [
+  { pga: 0.2, label: '5強' },
+  { pga: 0.35, label: '6弱' },
+  { pga: 0.55, label: '6強' },
+  { pga: 0.85, label: '7' },
+]
 
-export default function EarthquakePanel({ magnitude, onMagnitude, isShaking, countdown, onShake, hasShaken, selectedVariants }) {
-  const { parts } = useKit()
-  const structure = seismicParts(parts)
-  const verdict = hasShaken ? getVerdict(magnitude, structure, selectedVariants) : null
-  const richterLabel = RICHTER_LABELS[Math.floor(magnitude)] ?? 'Major'
-  const trackColor = magnitude < 5 ? '#27ae60' : magnitude < 7 ? '#f39c12' : '#e74c3c'
-  const seismicScore = getSeismicScore(magnitude, structure, selectedVariants)
+function fmt(n, d = 0) {
+  return Number(n).toLocaleString(undefined, { maximumFractionDigits: d, minimumFractionDigits: d })
+}
+const oneIn = r => (r > 0 ? `1/${fmt(1 / r)}` : '—')
+
+// Ground acceleration and roof movement over time.
+function Trace({ ground, roof }) {
+  const W = 240, H = 64, n = ground.length
+  if (n < 2) return null
+  const gMax = Math.max(1e-6, ...ground.map(Math.abs))
+  const rMax = Math.max(1e-6, ...roof.map(Math.abs))
+  const line = (arr, max, y0, h) => arr.map((v, i) => `${((i / (n - 1)) * W).toFixed(1)},${(y0 - (v / max) * h).toFixed(1)}`).join(' ')
+  return (
+    <svg className="eq-trace" viewBox={`0 0 ${W} ${H + 10}`} width="100%">
+      <polyline points={line(ground, gMax, 16, 13)} fill="none" stroke="#94a3b8" strokeWidth="1" />
+      <polyline points={line(roof, rMax, 48, 14)} fill="none" stroke="#e67e22" strokeWidth="1.4" />
+      <text x="0" y="8" className="wind-profile__axis">Ground ±{fmt(gMax, 2)} g</text>
+      <text x="0" y={H + 8} className="wind-profile__axis">Top floor ±{fmt(rMax * 100, 1)} cm</text>
+    </svg>
+  )
+}
+
+export default function EarthquakePanel({
+  pga, onPga, motion, onMotion, system, onSystem, dir, onDir,
+  model, result, isShaking, countdown, onShake, hasShaken,
+}) {
   const isPrimed = countdown != null
   const isLocked = isShaking || isPrimed
-  // Indicative near-field peak ground acceleration (g): ≈0.13 at M5, 0.5 at M7,
-  // 2 at M9. The old curve hit its 2.4 g cap above M5.2, so every quake read the same.
-  const pga = Math.min(2.4, Math.pow(10, 0.3 * magnitude - 2.4))
-
-  // Parts per 耐震等級, and what each grade does at this magnitude.
-  const byGrade = [1, 2, 3]
-    .map(grade => ({ grade, count: structure.filter(p => gradeOf(p, selectedVariants) === grade).length }))
-    .filter(g => g.count > 0)
+  const r = hasShaken && !isShaking ? result : null
+  const level = r?.worst.level
+  const trackColor = pga < 0.25 ? '#27ae60' : pga < 0.55 ? '#f39c12' : '#e74c3c'
 
   return (
-    <div
-      className="metrics-panel eq-panel"
-      style={{ bottom: 20, right: 304, left: 'auto', top: 'auto', width: 280, maxHeight: '80vh', overflow: 'auto' }}
-    >
+    <div className="metrics-panel eq-panel" style={{ width: 290, maxHeight: '80vh', overflow: 'auto' }}>
       <div className="metrics-header" style={{ padding: '10px 14px 0' }}>
-        <div style={{ fontWeight: 700, fontSize: 12, letterSpacing: '0.06em', textTransform: 'uppercase', color: trackColor }}>
-          ⚡ Earthquake Simulation
-        </div>
+        <div className="eq-panel__title" style={{ color: trackColor }}>⚡ Earthquake</div>
       </div>
 
       <div className={`eq-status-strip ${isShaking ? 'eq-status-strip--active' : isPrimed ? 'eq-status-strip--countdown' : ''}`}>
-        <span>{isShaking ? 'SEISMIC EVENT' : isPrimed ? 'COUNTDOWN' : hasShaken ? 'POST-EVENT REVIEW' : 'READY'}</span>
-        <strong>{isPrimed ? countdown : isShaking ? 'LIVE' : `${seismicScore}/100`}</strong>
+        <span>{isShaking ? 'SHAKING' : isPrimed ? 'BRACE' : r ? 'RESULT' : 'READY'}</span>
+        <strong>{isPrimed ? countdown : isShaking ? 'LIVE' : r ? level.label : ''}</strong>
       </div>
 
-      {/* Magnitude slider */}
       <div className="ipr-section" style={{ padding: '10px 14px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-          <span style={{ fontSize: 12, fontWeight: 600 }}>Magnitude</span>
-          <span style={{ fontSize: 16, fontWeight: 700, color: trackColor }}>M {magnitude.toFixed(1)}</span>
+        <div className="rain-panel__row">
+          <span>Ground shaking (PGA)</span>
+          <strong style={{ color: trackColor }}>{fmt(pga, 2)} g · 震度 {jmaIntensity(pga)}</strong>
         </div>
-        <input
-          type="range" min={3} max={9} step={0.1}
-          value={magnitude}
-          onChange={e => onMagnitude(parseFloat(e.target.value))}
-          disabled={isLocked}
-          style={{ width: '100%', accentColor: trackColor }}
-          aria-label="Magnitude"
-        />
-        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: '#888', marginTop: 4 }}>
-          <span>3.0 Minor</span>
-          <span style={{ fontWeight: 600, color: trackColor }}>{richterLabel}</span>
-          <span>9.0 Catastrophic</span>
-        </div>
-        <div className="eq-presets" aria-label="Earthquake presets">
-          {[5.5, 6.8, 7.6].map(preset => (
-            <button
-              key={preset}
-              onClick={() => onMagnitude(preset)}
-              disabled={isLocked}
-              className={Math.abs(magnitude - preset) < 0.05 ? 'eq-preset--active' : ''}
-            >
-              M{preset}
+        <input type="range" min={0.05} max={1.2} step={0.05} value={pga} disabled={isLocked}
+          onChange={e => onPga(parseFloat(e.target.value))} style={{ width: '100%', accentColor: trackColor }} />
+        <div className="rain-presets">
+          {PRESETS.map(p => (
+            <button key={p.label} disabled={isLocked} className={Math.abs(pga - p.pga) < 0.01 ? 'active' : ''} onClick={() => onPga(p.pga)}>
+              震度{p.label}<span>{p.pga} g</span>
             </button>
           ))}
         </div>
-      </div>
-
-      <div className="ipr-section eq-game-readout" style={{ padding: '0 14px 10px' }}>
-        <div>
-          <span>Indicative PGA</span>
-          <strong>{pga.toFixed(2)}g</strong>
-        </div>
-        <div>
-          <span>Seismic score</span>
-          <strong style={{ color: seismicScore >= 82 ? '#27ae60' : seismicScore >= 62 ? '#f39c12' : '#e74c3c' }}>
-            {seismicScore}/100
-          </strong>
-        </div>
-        <div className="eq-score-meter">
-          <div style={{ width: `${seismicScore}%`, background: seismicScore >= 82 ? '#27ae60' : seismicScore >= 62 ? '#f39c12' : '#e74c3c' }} />
-        </div>
-      </div>
-
-      {/* Structure by grade: holds / at risk / fails at this magnitude */}
-      <div className="ipr-section" style={{ padding: '0 14px 10px' }}>
-        <div className="ipr-section-label">Structure · {structure.length} parts</div>
-        {byGrade.map(({ grade, count }) => {
-          const state = magnitude > grade * 3 ? 'fails' : magnitude > grade * 2.2 ? 'at risk' : 'holds'
-          const color = state === 'fails' ? '#e74c3c' : state === 'at risk' ? '#f39c12' : '#27ae60'
-          return (
-            <div key={grade} className="eq-grade-row">
-              <span className="eq-grade-chip" style={{ color: GRADE_COLOR[grade], borderColor: GRADE_COLOR[grade] }}>耐震等級{grade}</span>
-              <span className="eq-grade-count">{count} parts</span>
-              <span className="eq-grade-state" style={{ color }}>{state}</span>
-            </div>
-          )
-        })}
-        <div className="eq-grade-note">Grade 1 holds to M3.0, grade 2 to M6.0, grade 3 to M9.0 (indicative).</div>
-      </div>
-
-      {/* Shake button */}
-      <div style={{ padding: '0 14px 10px' }}>
-        <button
-          onClick={onShake}
-          disabled={isLocked}
-          style={{
-            width: '100%', padding: '9px 0', border: 'none', borderRadius: 6, cursor: isLocked ? 'default' : 'pointer',
-            background: isLocked ? '#95a5a6' : `linear-gradient(135deg, ${trackColor}, #c0392b)`,
-            color: '#fff', fontWeight: 700, fontSize: 12, letterSpacing: '0.05em',
-            transition: 'background 0.3s',
-            animation: isShaking ? 'eq-shake-btn 0.15s infinite' : isPrimed ? 'eq-prime-btn 0.65s infinite' : 'none',
-          }}
-        >
-          {isPrimed ? `⚡ BRACE ${countdown}` : isShaking ? '⚡ SHAKING…' : hasShaken ? '⚡ SHAKE AGAIN' : '⚡ SIMULATE EARTHQUAKE'}
-        </button>
-      </div>
-
-      {/* Verdict */}
-      {verdict && !isShaking && (
-        <div style={{
-          margin: '0 14px 14px', padding: '10px 12px', borderRadius: 8,
-          border: `1.5px solid ${verdict.color}`,
-          background: verdict.color + '18',
-        }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: verdict.color }}>{verdict.label}</div>
-          <div style={{ fontSize: 11, color: '#666', marginTop: 3 }}>
-            M{magnitude.toFixed(1)} · {richterLabel}
-            {verdict.parts.length > 0 && ` · ${verdict.parts.length} part${verdict.parts.length !== 1 ? 's' : ''} compromised`}
+        <div className="wind-row">
+          <span className="wind-row__label">Type</span>
+          <div className="wind-dirs wind-dirs--two">
+            {Object.entries(MOTIONS).map(([k, m]) => (
+              <button key={k} disabled={isLocked} className={motion === k ? 'active' : ''} onClick={() => onMotion(k)}>{m.label}</button>
+            ))}
           </div>
-          {verdict.parts.length > 0 && (
-            <div style={{ marginTop: 6, display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-              {verdict.parts.slice(0, LIST_LIMIT).map(p => (
-                <span key={p.id} className="eq-part-chip">{p.id}</span>
-              ))}
-              {verdict.parts.length > LIST_LIMIT && (
-                <span className="eq-part-chip eq-part-chip--more">+{verdict.parts.length - LIST_LIMIT} more</span>
-              )}
-            </div>
-          )}
+        </div>
+        <div className="wind-row">
+          <span className="wind-row__label">Shake</span>
+          <div className="wind-dirs wind-dirs--two">
+            {['x', 'z'].map(d => (
+              <button key={d} disabled={isLocked} className={dir === d ? 'active' : ''} onClick={() => onDir(d)}>Along {d.toUpperCase()}</button>
+            ))}
+          </div>
+        </div>
+        <div className="wind-row">
+          <span className="wind-row__label">System</span>
+          <div className="wind-dirs wind-dirs--terrain">
+            {Object.entries(SYSTEMS).map(([k, sys]) => (
+              <button key={k} disabled={isLocked} className={system === k ? 'active' : ''} onClick={() => onSystem(k)} title={sys.label}>
+                {sys.label.split(' ')[0]}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {model && result && (
+        <div className="ipr-section eq-building" style={{ padding: '8px 14px' }}>
+          <span>{model.storeys.length} storeys · {fmt(model.height, 1)} m</span>
+          <span>{fmt(model.totalMass / 1000)} t</span>
+          <span>T = {fmt(result.period, 2)} s{result.isoPeriod ? ` (isolated ${result.isoPeriod} s)` : ''}</span>
+          <span>耐震等級 {result.grade}</span>
         </div>
       )}
+      {!model && <div className="rain-panel__note" style={{ padding: '8px 14px' }}>No visible parts with weight.</div>}
+
+      <div style={{ padding: '10px 14px' }}>
+        <button className="eq-shake-btn" onClick={onShake} disabled={isLocked || !result}
+          style={{
+            background: isLocked ? '#95a5a6' : `linear-gradient(135deg, ${trackColor}, #c0392b)`,
+            animation: isShaking ? 'eq-shake-btn 0.15s infinite' : isPrimed ? 'eq-prime-btn 0.65s infinite' : 'none',
+          }}>
+          {isPrimed ? `⚡ BRACE ${countdown}` : isShaking ? '⚡ SHAKING…' : hasShaken ? '⚡ SHAKE AGAIN' : '⚡ SHAKE'}
+        </button>
+        {isShaking && model && result && (
+          <div className="rain-panel__note" style={{ marginTop: 4 }}>Movement shown ×{swayScale(model, result)}.</div>
+        )}
+      </div>
+
+      {r && (
+        <>
+          <div className="ipr-section" style={{ padding: '10px 14px' }}>
+            <div className="eq-verdict" style={{ borderColor: level.color, background: level.color + '18' }}>
+              <strong style={{ color: level.color }}>{level.label}</strong>
+              <span>Worst storey: {r.worst.name}, drift {oneIn(r.worst.driftRatio)}</span>
+            </div>
+            <div className="rain-stats">
+              <div><strong>{oneIn(r.worst.driftRatio)}</strong><span>max storey drift</span></div>
+              <div><strong>{fmt(r.roofCm, 1)}</strong><span>cm top floor moves</span></div>
+              <div><strong>{fmt(Math.max(...r.storeys.map(s => s.accel)), 2)}</strong><span>g max floor shaking</span></div>
+              <div><strong>{fmt(r.strengthUsed * 100)}%</strong><span>of strength used{r.yields ? ' (yields)' : ''}</span></div>
+            </div>
+            {r.isoPeriod && (
+              <div className="rain-panel__row" style={{ marginTop: 6 }}>
+                <span>Isolators move</span>
+                <strong style={{ color: r.isoOver ? '#e74c3c' : undefined }}>
+                  {fmt(r.isoCm)} cm {r.isoOver ? `(over ${ISO_CLEARANCE_CM} cm gap)` : ''}
+                </strong>
+              </div>
+            )}
+            <Trace ground={r.groundTrace} roof={r.roofTrace} />
+          </div>
+
+          <div className="ipr-section" style={{ padding: '10px 14px' }}>
+            <div className="ipr-section-label">Storeys (top first)</div>
+            {[...r.storeys].reverse().map(s => (
+              <div key={s.name + s.z0} className="rain-pond-row">
+                <span><i className="eq-dot" style={{ background: s.level.color }} />{s.name}</span>
+                <strong>{oneIn(s.driftRatio)} · {fmt(s.accel, 2)} g</strong>
+              </div>
+            ))}
+            <div className="wind-legend" style={{ flexWrap: 'wrap', marginTop: 6 }}>
+              {DRIFT_LEVELS.map(l => <span key={l.key}><i style={{ background: l.color }} />{l.label}</span>)}
+            </div>
+          </div>
+        </>
+      )}
+
+      <div className="ipr-section" style={{ padding: '8px 14px 12px' }}>
+        <div className="rain-panel__note">
+          Shear-building model from IFC storeys and part weights. Period from the BSL formula.
+          Synthetic ground motion. Drift limits: 1/200 no damage, 1/100 minor, 1/50 damage, 1/30 severe.
+          Indicative only: no torsion, no soil.
+        </div>
+      </div>
     </div>
   )
 }

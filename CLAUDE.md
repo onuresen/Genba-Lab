@@ -105,7 +105,7 @@ Every simulation reads one array of **parts**. IFC import builds it (`ifcToKit.j
 | `showWaterSim`, `rainfall` (mm/h), `waterResult` | Rain & water flow |
 | `showThermal`, `showAcoustic` | Material overlays |
 | `fireMode`, `fireState`, `fireElapsed`, `fireIntensity`, `showFireCompartments` | Fire |
-| `showEarthquake`, `earthquakeMagnitude`, `isShaking`, `hasShaken`, `earthquakeCountdown` | Earthquake |
+| `showEarthquake`, `quakePga` (g), `quakeMotion` (`near`\|`far`), `quakeSystem` (`standard`\|`damped`\|`isolated`), `quakeDir` (`x`\|`z`), `isShaking`, `hasShaken`, `earthquakeCountdown` | Earthquake. Derived (useMemo): `quakeModel`, `quakeResult`, `quakeLevels` (structural part → storey damage level). A result shows only while its inputs are unchanged (`quakeDone`). |
 | `highlightedWeek` | Gantt hover |
 | `cinematicMode`, `rendererRef` | Demo tour, screenshots |
 | `showFloorPlan` | Floor plan modal |
@@ -120,10 +120,10 @@ Real models are 20–100 m, not the 5 m Kit-of-Parts kit. Never hard-code world 
 - Scene passes `frame` to the camera, demo tour, earthquake ground effects, Ken grid and ground shadow.
 
 ### Visual state and motion
-- `Part.jsx` never picks colours itself. `resolvePartVisual` decides, strongest first: fire > earthquake > selection > Gantt week > acoustic tint > hover > model colour. A selected or focused part is never dimmed. See-through parts don't write depth.
+- `Part.jsx` never picks colours itself. `resolvePartVisual` decides, strongest first: fire > earthquake (flash while shaking, collapse red, then the storey's damage colour) > selection > Gantt week > acoustic tint > hover > model colour. A selected or focused part is never dimmed. See-through parts don't write depth.
 - Focus on selection: the part and its direct neighbours stay solid, the rest fades to 12 %. The camera keeps its viewing direction and frames them. Clearing by the user (Esc, ground click, panel close) flies back to the earlier view, unless the camera moved since the flight landed. Other code that clears the selection (mode changes, model load) does not move the camera.
 - Any drag, zoom or click on the canvas stops a running camera flight (`OrbitControls onStart`). A drag that ends on the ground does not clear the selection.
-- `prefers-reduced-motion: reduce`: camera flights, explode and build moves become cuts; no part shake, camera rumble or click pulse; the demo tour cuts between views and keeps its timing. Results and colours are the same.
+- `prefers-reduced-motion: reduce`: camera flights, explode and build moves become cuts; no storey sway (the shake waits 1.5 s instead of the full motion), camera rumble or click pulse; the demo tour cuts between views and keeps its timing. Results and colours are the same.
 
 ### Camera
 - `setCameraCmd({ type: 'preset', preset: 'front', ts: Date.now() })`. Presets: `front`, `back`, `top`, `bottom`, `right`, `left`, `home`.
@@ -153,7 +153,7 @@ Real models are 20–100 m, not the 5 m Kit-of-Parts kit. Never hard-code world 
 | File | Role |
 |---|---|
 | `Scene.jsx` | Canvas host, camera controller, ground, all overlays. On-demand render loop (see Performance). |
-| `Part.jsx` | One part: IFC mesh (box fallback), explode/sequence/shake tweens, hover, clipping, fire/acoustic/week tints. |
+| `Part.jsx` | One part: IFC mesh (box fallback), explode/sequence tweens, earthquake sway shader (mesh + outline), damage lean, hover, clipping. Looks come from `resolvePartVisual`. |
 | `Connection.jsx` | Lines between connected parts (toggle `showConnections`). |
 | `Crane.jsx` | Tower crane from `craneLayout`; slews to parts in sequence mode; lift-plan sweep. |
 | `CinematicMode.jsx` | Scripted demo tour, scaled by `frame`. |
@@ -162,7 +162,8 @@ Real models are 20–100 m, not the 5 m Kit-of-Parts kit. Never hard-code world 
 | `WindLoad.jsx` | Wind on real surfaces: pressure heat map (blue in / red out), pressure arrows, streamlines around the model, peak labels. |
 | `WaterFlow.jsx` | Rain runoff on real surfaces: flow lines, moving droplets, ponds, drip zones, rain streaks. Recomputes on visibility / rainfall change. |
 | `FireEffects.jsx`, `FireCompartments.jsx` | Fire visuals; compartment boxes by storey vs BSL 500 m². |
-| `EarthquakeEffects.jsx` | Camera rumble, ground rings/faults (scaled), stress markers. |
+| `EarthquakeEffects.jsx` | Camera rumble, ground rings/faults (scaled), damage markers on structure in damaged storeys. |
+| `QuakePlayback.jsx` | Replays the computed response: writes floor displacements (× sway scale) into the shader uniforms each frame. Off under reduced motion. |
 | `ThermalOverlay.jsx` | Thermal bridge nodes at connections. |
 | `ViewCube.jsx` | Navigation cube. |
 | `RenderDiagnostics.jsx` | `?perf` render-loop diagnostics. |
@@ -179,7 +180,8 @@ Real models are 20–100 m, not the 5 m Kit-of-Parts kit. Never hard-code world 
 | `SupplyRiskPanel.jsx` | Lead-time risk, shortage simulation. |
 | `GanttPanel.jsx` | Schedule by week; highlights parts in 3D. |
 | `CranePanel.jsx` | Crane specs, live lift load, wind (gusty demo, or the wind sim's speed at jib height), lift path planner, cab view, second crane. |
-| `EarthquakePanel.jsx`, `FirePanel.jsx` | Simulation controls + verdicts. |
+| `EarthquakePanel.jsx` | PGA + 震度 presets, near / far motion, X / Z, 耐震 / 制振 / 免震; building (storeys, mass, period, 耐震等級); verdict, drift, top movement, floor shaking, strength used, isolator movement, traces, storey table. |
+| `FirePanel.jsx` | Simulation controls + verdicts. |
 | `WindPanel.jsx` | V0 + presets (to super typhoon 46), direction (8), terrain; top speed, push (base shear), peak pressure/suction, overturning, force by height, parts lifted more than their weight. |
 | `RainPanel.jsx` | Rainfall (mm/h, presets up to ゲリラ豪雨 100), catchment, runoff, pond/ground/drain shares, where water collects. |
 | `FloorPlanPanel.jsx` | 2D plan, SVG export. |
@@ -199,6 +201,8 @@ Real models are 20–100 m, not the 5 m Kit-of-Parts kit. Never hard-code world 
 | `modelMetrics.js`, `craneLayout.js`, `factoryLayout.js` | Model-scale helpers (see Scale). |
 | `materialMetrics.js` | Default thermal / supply-risk / STC values and colours. |
 | `renderActivity.js` | Which effects need a continuous render loop. |
+| `seismic.js` | Earthquake engine: `buildStoreyModel`, `groundMotion`, `simulateQuake`, `driftLevel`, `jmaIntensity`, `swayScale`, `storeyIndexOf`; `seismicParts` (structure only), `structureLevels`. Pure, tested. |
+| `quakeDeform.js` | Shared sway uniforms + `quakeCompile` (onBeforeCompile) for part and outline materials. |
 | `partVisual.js` | `resolvePartVisual`: the one place that decides a part's tint, opacity and outline (see Visual state). |
 | `focus.js` | `focusContext` (part + direct neighbours, both directions), `focusRole`, `focusBounds`. |
 | `motion.js` | `prefersReducedMotion`, `motionDuration` (0 = a cut when motion is reduced). |
@@ -222,6 +226,18 @@ Real models are 20–100 m, not the 5 m Kit-of-Parts kit. Never hard-code world 
 - Streamlines: march downwind; when blocked, step up or sideways; drift back once clear. Reduced motion: beads hold still.
 - North = −Z of the model. Indicative: no wind tunnel, no internal pressure.
 - Sim panels (crane, rain, fire, earthquake, wind) live in `.sim-dock` (bottom-right stack).
+
+## Earthquake
+
+- Shear building. Storeys = IFC storeys (`fire_compartment`), merged under 2 m, max 23. Part weight lumped at the two levels around its centre.
+- Period T = H (0.02 + 0.01 α), α = steel/timber share of structural weight (BSL). Storey stiffness shaped for uniform drift, scaled to T. 耐震等級 2/3 = 1.25×/1.5× stiffer and stronger.
+- Systems: 耐震 ζ 5 % (−3 % × α), 制振 ζ 15 %, 免震 isolation layer T 3.5 s, ζ 20 %, 60 cm gap.
+- Ground motion: Kanai-Tajimi sum of sines × envelope, seeded, scaled to PGA. Near fault (16 s, pulse) / long and far (26 s).
+- Newmark average acceleration, dt 0.01 s. Output: frames (0.02 s), drift ratio, floor accel, storey shear, roof / isolator movement, base shear coefficient.
+- Yield: strength coefficient 0.35 (RC) … 0.30 (steel) × grade factor. Demand above it raises drift (equal energy for short periods) and sets at least "Minor cracks" (> 2×: "Damage").
+- Damage by drift: 1/200, 1/100, 1/50, 1/30. Structure in a storey at "Severe" or worse flashes while shaking; at "Collapse risk" it leans and settles after.
+- Playback: vertex shader moves each vertex (mesh and outline) by the displacement at its world height (columns lean). Sway enlarged to ~6 % of height (×1–100), shown in the panel. Shadows do not sway.
+- Results are computed when inputs change; Shake only replays them. The result banner reads the worst storey. Indicative: linear + yield correction, no torsion, no soil.
 
 ## Rain & water flow
 
@@ -257,9 +273,14 @@ Real models are 20–100 m, not the 5 m Kit-of-Parts kit. Never hard-code world 
   - **Why:** the old rules burned a whole house in 4 s: nothing to see or play.
   - **Alternative:** keep old timings. Rejected: no time to react.
   - **Confidence:** med (indicative only)
-- **Decision:** Earthquake verdict checks primary structure only (`utils/seismic.js`).
+- **Decision:** Earthquake tints, markers and leans apply to primary structure only (`seismicParts`); every visible part still adds mass to the storey model.
   - **Why:** IFC windows/doors have no structural role and counted as primary, so most models "failed" above M3.
   - **Confidence:** high
+- **Decision:** Earthquake = shear-building time history from IFC storeys and weights; sway via a vertex shader.
+  - **Why:** Real drift / acceleration per storey that reacts to materials, 耐震等級 and 免震, in milliseconds. The shader shows true storey deformation with no React re-render.
+  - **Alternative:** Random GSAP shake per part (old). Rejected: no physics. Full FEM: too heavy, needs member data.
+  - **Revisit when:** torsion or soft storeys from real stiffness matter.
+  - **Confidence:** med
 
 - **Decision:** Consume the exact pinned OpenBIM Core package and keep Genba's simulation projection local.
   - **Why:** CDI and Genba can improve one source-faithful IFC parser without sharing viewers, product state or simulation assumptions.

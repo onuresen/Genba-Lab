@@ -15,6 +15,7 @@ import ThermalOverlay from './ThermalOverlay'
 import FactoryGrid from './FactoryGrid'
 import FireEffects from './FireEffects'
 import EarthquakeEffects from './EarthquakeEffects'
+import QuakePlayback from './QuakePlayback'
 import { useKit } from './KitContext'
 import RenderDiagnostics from './RenderDiagnostics'
 import { getContinuousRenderReasons } from '../utils/renderActivity'
@@ -23,7 +24,6 @@ import { cameraViews, fitDistance, modelFrame } from '../utils/modelMetrics'
 import { factoryLayout } from '../utils/factoryLayout'
 import { markShadowsDirty, takeShadowsDirty } from '../utils/shadowSync'
 import { sunDirection } from '../utils/sun'
-import { seismicParts } from '../utils/seismic'
 import { focusRole } from '../utils/focus'
 import { motionDuration } from '../utils/motion'
 
@@ -299,7 +299,11 @@ export default function Scene({
   onSetShowMetrics,
   maxStep,
   isShaking,
-  earthquakeMagnitude,
+  quakePga,
+  quakeModel,
+  quakeResult,
+  quakeDir,
+  quakeLevels,
   hasShaken,
   highlightedWeek,
   showSecondCrane,
@@ -339,7 +343,6 @@ export default function Scene({
   const { parts } = useKit()
   const craneLayout = useMemo(() => computeCraneLayout(parts), [parts])
   const frame = useMemo(() => modelFrame(parts), [parts])
-  const quakeIds = useMemo(() => new Set(seismicParts(parts ?? []).map(p => p.id)), [parts])
   const fadeTexture = useFadeTexture()
   // Ken grid (910 mm module) covers the model footprint.
   const footprint = Math.max(frame.size[0], frame.size[2])
@@ -447,8 +450,7 @@ export default function Scene({
             sectionCutY={sectionCutY}
             isShaking={isShaking}
             hasShaken={hasShaken}
-            inQuakeCheck={quakeIds.has(part.id)}
-            earthquakeMagnitude={earthquakeMagnitude}
+            quakeLevel={quakeLevels?.[part.id] ?? null}
             highlightedWeek={highlightedWeek}
             showAcoustic={showAcoustic}
             fireMode={fireMode}
@@ -571,12 +573,14 @@ export default function Scene({
         <ThermalOverlay parts={parts} visible={visible} selectedVariants={selectedVariants} frame={frame} />
       )}
 
+      <QuakePlayback active={!factoryMode && isShaking} model={quakeModel} result={quakeResult} dir={quakeDir} />
+
       {!factoryMode && (isShaking || hasShaken) && (
         <EarthquakeEffects
           parts={parts}
           visible={visible}
-          selectedVariants={selectedVariants}
-          magnitude={earthquakeMagnitude ?? 6}
+          pga={quakePga}
+          levels={quakeLevels}
           isShaking={isShaking}
           hasShaken={hasShaken}
           frame={frame}

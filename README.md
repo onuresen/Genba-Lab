@@ -17,7 +17,7 @@ Load an IFC file. Each element becomes a part you can test.
 
 - **Assembly sequence.** Watch the model go up, storey by storey.
 - **Tower crane.** Sized and placed from the model. Lift checks per part. Lift path planner. Cab view.
-- **Earthquake.** Shake the model by magnitude.
+- **Earthquake.** Storeys from IFC sway in a real time history. Drift, floor shaking and damage per storey. 震度 presets, 耐震 / 制振 / 免震.
 - **Fire.** Spread by fire rating. Fire compartments per storey.
 - **Rain & water flow.** Rain lands on the real surfaces, runs downhill, drips off edges and collects. Shows ponds, drip zones and runoff per mm/h.
 - **Wind.** BSL wind load on the real facades: pressure map, arrows, streamlines, base shear, roof uplift. Speed, direction and terrain.
