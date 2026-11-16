@@ -34,7 +34,7 @@ export function modelFrame(parts) {
 }
 
 // Camera views scale with the model. `d` is the viewing distance; the old
-// Kit-of-Parts kit (≈5 m) keeps its original 14 m views as the minimum.
+// The Assembly Lab sample kit (≈5 m) keeps its original 14 m views as the minimum.
 // Narrow (portrait) screens see less width, so the camera steps back.
 export function cameraViews(frame, aspect = 1.6) {
   const [cx, cy, cz] = frame.center

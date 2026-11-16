@@ -69,8 +69,8 @@ React · Three.js · React Three Fiber · three-mesh-bvh · GSAP · OpenBIM Core
 
 ## Origin
 
-Genba Lab grew out of [Kit-of-Parts](https://github.com/onuresen/Kit-of-Parts), a modular building configurator.
-Kit-of-Parts plays with ideal parts. Genba Lab tests real models.
+Genba Lab grew out of the project formerly named Kit-of-Parts, now [Assembly Lab](https://github.com/onuresen/Assembly-Lab), a modular building configurator.
+Assembly Lab plays with authored product systems. Genba Lab tests real models.
 
 ## License
 

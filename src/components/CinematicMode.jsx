@@ -5,7 +5,7 @@ import { prefersReducedMotion } from '../utils/motion'
 
 // Drives the camera through a scripted demo sequence.
 // Called from Scene when cinematicMode=true; calls onEnd when the tour finishes.
-// Positions were written for the ≈5 m Kit-of-Parts kit. They are scaled by the
+// Positions were written for the ≈5 m Assembly Lab sample kit. They are scaled by the
 // model's radius and moved to its centre (`frame` from utils/modelMetrics.js).
 export default function CinematicMode({ active, controlsRef, onEnd, onSetExploded, onSetSequenceMode, onSetSequenceStep, onSetShowMetrics, maxStep, frame }) {
   const { camera } = useThree()

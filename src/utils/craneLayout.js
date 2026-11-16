@@ -3,7 +3,7 @@
 // Indicative only: not a crane selection or lift study.
 
 export const CRANE_CLEARANCE = 3     // m from the model edge to the mast
-export const MIN_JIB = 9             // m, the original Kit-of-Parts crane
+export const MIN_JIB = 9             // m, the original Assembly Lab crane
 export const MAX_JIB = 80            // m, a large flat-top tower crane
 export const MAX_CAPACITY = 8000     // kg at short radius
 const BASE_MOMENT = 60000            // kg·m (60 t·m) for the 9 m jib

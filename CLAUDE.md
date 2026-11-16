@@ -2,7 +2,7 @@
 
 > Real building models, real what-ifs. A BIM simulation playground in the browser.
 > Load an IFC file; every element becomes a part that all simulations read.
-> Grew out of [Kit-of-Parts](https://github.com/onuresen/Kit-of-Parts) (commit `7ed9eab`). Block-kit features were removed; see Key decisions.
+> Grew out of the project formerly named Kit-of-Parts, now [Assembly Lab](https://github.com/onuresen/Assembly-Lab) (commit `7ed9eab`). Block-kit features were removed; see Key decisions.
 
 ## Keeping This File Up to Date
 
@@ -49,8 +49,8 @@ No Tailwind. Styles live in `src/App.css` plus inline styles. Dark mode via `[da
 
 ### Group 0 product spine
 
-- `src/contracts/productSystem.js` is the versioned interchange envelope shared with Kit of Parts. Keep the two copies byte-for-byte compatible.
-- Genba Lab remains the real-model testing environment; it does not absorb the Kit of Parts authoring runtime.
+- `src/contracts/productSystem.js` is the versioned interchange envelope shared with Assembly Lab. Keep the two copies byte-for-byte compatible.
+- Genba Lab remains the real-model testing environment; it does not absorb the Assembly Lab authoring runtime.
 - The toolbar is workspace-led: Explore, Factory to Site, Test, and Review. Existing shortcuts continue to work across workspaces.
 - Secondary panels are loaded on first use with React lazy boundaries. See `docs/GROUP-0-FOUNDATION.md` for the performance budgets and loading policy.
 
@@ -120,7 +120,7 @@ Every simulation reads one array of **parts**. IFC import builds it (`ifcToKit.j
 **3. Component-level** — hover, refs, panel tabs.
 
 ### Scale: everything follows the model
-Real models are 20–100 m, not the 5 m Kit-of-Parts kit. Never hard-code world sizes.
+Real models are 20–100 m, not the 5 m Assembly Lab sample kit. Never hard-code world sizes.
 - `utils/modelMetrics.js`: `modelFrame(parts)` (centre, size, radius), `cameraViews(frame)` (presets + home), `estimateFloorArea(parts)` (Σ storey footprints).
 - `utils/craneLayout.js`: crane position, jib, height, capacity from the model.
 - `utils/factoryLayout.js`: bay grid sized to the part count.
@@ -302,7 +302,7 @@ Real models are 20–100 m, not the 5 m Kit-of-Parts kit. Never hard-code world 
 - **Decision:** Removed block-kit features (sample kits, kit JSON I/O, window/door/cylinder/GLB, Builder, Site, Game) and the PDF/IFC exports.
   - **Why:** Genba Lab is for real models. The box IFC export downgraded the user's own file; the per-part PDF was 100+ pages.
   - **Alternative:** Hide behind flags. Rejected: dead code for no user.
-  - **Revisit when:** a feature is needed again; port it from Kit-of-Parts.
+  - **Revisit when:** a feature is needed again; port it from Assembly Lab.
   - **Confidence:** high
 - **Decision:** Crane, camera, factory, ground effects and per-m² metrics scale from the model.
   - **Why:** Fixed 5 m-kit numbers put the camera and crane inside real buildings and divided carbon by 16 m².

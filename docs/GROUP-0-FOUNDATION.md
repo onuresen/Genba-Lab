@@ -1,6 +1,6 @@
 # Group 0: Product spine and performance budget
 
-Genba Lab tests real models and imported product systems. Kit of Parts authors ideal product systems. They remain separate applications and exchange a small, versioned document rather than sharing runtime code.
+Genba Lab tests real models and imported product systems. Assembly Lab authors ideal product systems. They remain separate applications and exchange a small, versioned document rather than sharing runtime code.
 
 ## Shared contract v1
 
