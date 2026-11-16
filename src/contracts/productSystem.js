@@ -1,5 +1,5 @@
 /**
- * Shared interchange contract for Genba Lab and Kit of Parts.
+ * Shared interchange contract for Genba Lab and Assembly Lab.
  * Keep this file byte-for-byte compatible across both repositories.
  */
 export const PRODUCT_SYSTEM_SCHEMA = 'industrialized-product-system'
