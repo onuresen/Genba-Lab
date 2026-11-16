@@ -45,7 +45,8 @@ function ToolButton({ icon, label, hint, keyName, active, disabled, onClick, too
   )
 }
 
-function Group({ label, children }) {
+function Group({ label, children, workspace, activeWorkspace }) {
+  if (workspace && workspace !== activeWorkspace) return null
   return (
     <div className="toolbar-group" role="group" aria-label={label}>
       <span className="toolbar-group__label" aria-hidden="true">{label}</span>
@@ -77,6 +78,7 @@ export default function Toolbar({
   mobileSidebarOpen, onToggleMobileSidebar,
 }) {
   const tooltip = useTooltip()
+  const [activeWorkspace, setActiveWorkspace] = useState('explore')
   const isSelectMode = !factoryMode && !sequenceMode
 
   function handleSelectMode() {
@@ -88,6 +90,11 @@ export default function Toolbar({
 
   return (
     <>
+      <nav className="workspace-tabs" aria-label="Workspace">
+        {[['explore', 'Explore'], ['flow', 'Factory → Site'], ['test', 'Test'], ['review', 'Review']].map(([id, label]) => (
+          <button key={id} className={`workspace-tab${activeWorkspace === id ? ' workspace-tab--active' : ''}`} onClick={() => setActiveWorkspace(id)}>{label}</button>
+        ))}
+      </nav>
       <div className="toolbar" onMouseLeave={tooltip.hide}>
         <button
           className={`tb-btn tb-btn--mobile-only ${mobileSidebarOpen ? 'tb-btn--active' : ''}`}
@@ -98,7 +105,7 @@ export default function Toolbar({
         </button>
         <div className="toolbar-sep tb-sep--mobile-only" />
 
-        <Group label="View">
+        <Group label="View" workspace="explore" activeWorkspace={activeWorkspace}>
           <ToolButton {...t} icon={MousePointer2} label="Select" hint="Click a part to inspect it" keyName="S" active={isSelectMode} onClick={handleSelectMode} />
           <ToolButton {...t} icon={Scissors} label="Section cut" hint="Slice the model at a height" keyName="X" active={sectionCutActive} onClick={onToggleSectionCut} disabled={factoryMode} />
           <ToolButton {...t} icon={Ruler} label="Dimensions" hint="Overall width, depth and height" keyName="D" active={showDimensions} onClick={onToggleDimensions} disabled={factoryMode} />
@@ -108,7 +115,7 @@ export default function Toolbar({
 
         <div className="toolbar-sep" />
 
-        <Group label="Build">
+        <Group label="Build" workspace="flow" activeWorkspace={activeWorkspace}>
           <ToolButton {...t} icon={Layers} label="Build sequence" hint="Watch the model go up, part by part" keyName="B" active={sequenceMode} onClick={onToggleSequence} disabled={factoryMode} />
           <ToolButton {...t} icon={HardHat} label="Tower crane" hint="Crane sized to the model, lift checks" keyName="C" active={showCrane} onClick={onToggleCrane} disabled={factoryMode} />
           <ToolButton {...t} icon={Factory} label="Factory layout" hint="Parts by production bay" keyName="F" active={factoryMode} onClick={onToggleFactoryMode} disabled={sequenceMode} />
@@ -116,7 +123,7 @@ export default function Toolbar({
 
         <div className="toolbar-sep" />
 
-        <Group label="Simulate">
+        <Group label="Simulate" workspace="test" activeWorkspace={activeWorkspace}>
           <ToolButton {...t} icon={Activity} label="Earthquake" hint="Shake the model by magnitude" keyName="Q" active={showEarthquake} onClick={onToggleEarthquake} disabled={factoryMode} />
           <ToolButton {...t} icon={Wind} label="Wind" hint="Wind load on the model (BSL)" keyName="W" active={showWindArrows} onClick={onToggleWindArrows} disabled={factoryMode} />
           <ToolButton {...t} icon={Droplets} label="Rain" hint="Rain and water flow on the model" keyName="R" active={showWaterSim} onClick={onToggleWaterSim} disabled={factoryMode} />
@@ -126,7 +133,7 @@ export default function Toolbar({
 
         <div className="toolbar-sep" />
 
-        <Group label="Analyze">
+        <Group label="Analyze" workspace="review" activeWorkspace={activeWorkspace}>
           <ToolButton {...t} icon={Thermometer} label="Thermal bridges" hint="Heat loss at joints" keyName="T" active={showThermal} onClick={onToggleThermal} disabled={factoryMode} />
           <ToolButton {...t} icon={Volume2} label="Acoustics" hint="Sound insulation by part" keyName="A" active={showAcoustic} onClick={onToggleAcoustic} disabled={factoryMode} />
           <ToolButton {...t} icon={BarChart3} label="Metrics" hint="Cost, carbon, BOM, schedule" keyName="M" active={showMetrics} onClick={onToggleMetrics} />

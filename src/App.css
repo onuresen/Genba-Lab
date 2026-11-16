@@ -6,9 +6,36 @@
 }
 
 /* ─── Toolbar ─────────────────────────────────────────────── */
+.workspace-tabs {
+  position: fixed;
+  top: 10px;
+  left: calc(50% - 32px);
+  transform: translateX(-50%);
+  z-index: 21;
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 3px 14px rgba(0, 0, 0, 0.1);
+  backdrop-filter: blur(10px);
+}
+
+.workspace-tab {
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #647383;
+  padding: 5px 9px;
+  font: 700 10px/1 'Segoe UI', sans-serif;
+  cursor: pointer;
+}
+
+.workspace-tab--active { background: #2c3e50; color: white; }
+
 .toolbar {
   position: fixed;
-  top: 12px;
+  top: 48px;
   /* Centre of the free space between the sidebar (240px) and the right card (304px). */
   left: calc(50% - 32px);
   transform: translateX(-50%);

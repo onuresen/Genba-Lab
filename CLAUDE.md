@@ -47,6 +47,13 @@ No Tailwind. Styles live in `src/App.css` plus inline styles. Dark mode via `[da
 
 ## Architecture
 
+### Group 0 product spine
+
+- `src/contracts/productSystem.js` is the versioned interchange envelope shared with Kit of Parts. Keep the two copies byte-for-byte compatible.
+- Genba Lab remains the real-model testing environment; it does not absorb the Kit of Parts authoring runtime.
+- The toolbar is workspace-led: Explore, Factory to Site, Test, and Review. Existing shortcuts continue to work across workspaces.
+- Secondary panels are loaded on first use with React lazy boundaries. See `docs/GROUP-0-FOUNDATION.md` for the performance budgets and loading policy.
+
 ### Data model: the "kit"
 Every simulation reads one array of **parts**. IFC import builds it (`ifcToKit.js`).
 

@@ -1,17 +1,9 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import { lazy, Suspense, useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import Scene from './components/Scene'
 import InfoPanel from './components/InfoPanel'
 import Sidebar from './components/Sidebar'
 import Toolbar from './components/Toolbar'
-import MetricsPanel from './components/MetricsPanel'
-import ShortcutsModal from './components/ShortcutsModal'
 import ViewCube from './components/ViewCube'
-import CranePanel from './components/CranePanel'
-import EarthquakePanel from './components/EarthquakePanel'
-import FloorPlanPanel from './components/FloorPlanPanel'
-import FirePanel from './components/FirePanel'
-import RainPanel from './components/RainPanel'
-import WindPanel from './components/WindPanel'
 import SequencePlayer from './components/SequencePlayer'
 import Celebration from './components/Celebration'
 import StartScreen from './components/StartScreen'
@@ -27,6 +19,15 @@ import { prefersReducedMotion } from './utils/motion'
 import { canRecord, startCanvasRecording } from './utils/videoRecorder'
 import { focusBounds, focusContext } from './utils/focus'
 import './App.css'
+
+const MetricsPanel = lazy(() => import('./components/MetricsPanel'))
+const ShortcutsModal = lazy(() => import('./components/ShortcutsModal'))
+const CranePanel = lazy(() => import('./components/CranePanel'))
+const EarthquakePanel = lazy(() => import('./components/EarthquakePanel'))
+const FloorPlanPanel = lazy(() => import('./components/FloorPlanPanel'))
+const FirePanel = lazy(() => import('./components/FirePanel'))
+const RainPanel = lazy(() => import('./components/RainPanel'))
+const WindPanel = lazy(() => import('./components/WindPanel'))
 
 // Build playback: 1× places the whole model in about 45 s, whatever its size.
 const BUILD_SECONDS = 45
@@ -866,7 +867,7 @@ export default function App() {
         />
       )}
 
-      {showMetrics && (
+      <Suspense fallback={null}>{showMetrics && (
         <MetricsPanel
           selectedVariants={selectedVariants}
           visible={visible}
@@ -875,12 +876,12 @@ export default function App() {
           highlightedWeek={highlightedWeek}
           onHighlightWeek={w => setHighlightedWeek(w)}
         />
-      )}
+      )}</Suspense>
 
-      {showShortcuts && <ShortcutsModal onClose={() => setShowShortcuts(false)} />}
+      <Suspense fallback={null}>{showShortcuts && <ShortcutsModal onClose={() => setShowShortcuts(false)} />}</Suspense>
 
       {/* Simulation panels stack bottom-right. */}
-      <div className="sim-dock">
+      <Suspense fallback={null}><div className="sim-dock">
         {showCrane && (
           <CranePanel
             sequenceMode={sequenceMode}
@@ -956,15 +957,15 @@ export default function App() {
             onSelectPart={selectPartById}
           />
         )}
-      </div>
+      </div></Suspense>
 
-      {showFloorPlan && (
+      <Suspense fallback={null}>{showFloorPlan && (
         <FloorPlanPanel
           visible={visible}
           showKenGrid={envSettings.kenGrid}
           onClose={() => setShowFloorPlan(false)}
         />
-      )}
+      )}</Suspense>
 
       <ViewCube onPreset={handleCameraPreset} darkMode={darkMode} />
 
