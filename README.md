@@ -16,6 +16,7 @@ A BIM simulation playground in the browser.
 Load an IFC file. Each element becomes a part you can test.
 
 - **Assembly sequence.** Watch the model go up, storey by storey.
+- **Scenario workbench.** Frame earthquake, wind, rain, fire and crane checks as a question, inputs, evidence and a controlled next comparison.
 - **Tower crane.** Sized and placed from the model. Lift checks per part. Lift path planner. Cab view.
 - **Earthquake.** Storeys from IFC sway in a real time history. Drift, floor shaking and damage per storey. 震度 presets, 耐震 / 制振 / 免震.
 - **Fire.** Spread by fire rating. Fire compartments per storey.

@@ -54,6 +54,13 @@ No Tailwind. Styles live in `src/App.css` plus inline styles. Dark mode via `[da
 - The toolbar is workspace-led: Explore, Factory to Site, Test, and Review. Existing shortcuts continue to work across workspaces.
 - Secondary panels are loaded on first use with React lazy boundaries. See `docs/GROUP-0-FOUNDATION.md` for the performance budgets and loading policy.
 
+### Group 1 scenario workbench
+
+- `ScenarioWorkbench.jsx` gives earthquake, wind, rain, fire, and crane tests one investigation structure: question, inputs, run, evidence, and alternative.
+- Progress and evidence are projections of the existing simulation state; the workbench never creates a second result model or treats an input change as a verified redesign.
+- Multiple active simulations expose compact tabs. Toolbar buttons and keyboard shortcuts focus the matching investigation.
+- The workbench is lazy-loaded, collapsible, responsive, and adds no render loop or persisted data. See `docs/GROUP-1-SCENARIO-WORKBENCH.md`.
+
 ### Data model: the "kit"
 Every simulation reads one array of **parts**. IFC import builds it (`ifcToKit.js`).
 
@@ -116,6 +123,7 @@ Every simulation reads one array of **parts**. IFC import builds it (`ifcToKit.j
 | `highlightedWeek` | Gantt hover |
 | `cinematicMode`, `rendererRef` | Demo tour, screenshots |
 | `showFloorPlan` | Floor plan modal |
+| `scenarioFocus` | Which active physical investigation the shared workbench explains |
 
 **3. Component-level** — hover, refs, panel tabs.
 
@@ -179,6 +187,7 @@ Real models are 20–100 m, not the 5 m Assembly Lab sample kit. Never hard-code
 | File | Role |
 |---|---|
 | `Toolbar.jsx` | All toggles. |
+| `ScenarioWorkbench.jsx` | Shared question → inputs → run → evidence → alternative journey for physical investigations. |
 | `Sidebar.jsx` | Presets, layers, factory summary, `IfcLoadButton`. |
 | `IfcLoadButton.jsx` | LOAD IFC + progress. Also on the empty start screen. |
 | `InfoPanel.jsx` | Selected part: IFC data, variants (incl. what-if), stats, connections, environment. |

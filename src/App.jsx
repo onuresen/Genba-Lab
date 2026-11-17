@@ -28,6 +28,7 @@ const FloorPlanPanel = lazy(() => import('./components/FloorPlanPanel'))
 const FirePanel = lazy(() => import('./components/FirePanel'))
 const RainPanel = lazy(() => import('./components/RainPanel'))
 const WindPanel = lazy(() => import('./components/WindPanel'))
+const ScenarioWorkbench = lazy(() => import('./components/ScenarioWorkbench'))
 
 // Build playback: 1× places the whole model in about 45 s, whatever its size.
 const BUILD_SECONDS = 45
@@ -80,6 +81,7 @@ export default function App() {
   const [showShortcuts, setShowShortcuts] = useState(false)
   const [showCrane, setShowCrane] = useState(false)
   const [showCraneRadius, setShowCraneRadius] = useState(false)
+  const [scenarioFocus, setScenarioFocus] = useState('earthquake')
   const [cinematicMode, setCinematicMode] = useState(false)
   const rendererRef = useRef(null)
 
@@ -513,6 +515,7 @@ export default function App() {
 
   function handleToggleFireMode() {
     if (fireMode) { handleExtinguish() }
+    if (!fireMode) setScenarioFocus('fire')
     setFireMode(v => !v)
   }
 
@@ -574,10 +577,10 @@ export default function App() {
       case 'x': if (inModel) toggleSectionCut(); break
       case 'f': if (!sequenceMode) toggleFactoryMode(); break
       case 'b': if (inModel) toggleSequenceMode(); break
-      case 'c': if (inModel) setShowCrane(v => !v); break
-      case 'q': if (inModel) { setShowEarthquake(v => !v); setHasShaken(false) } break
-      case 'w': if (inModel) setShowWindArrows(v => !v); break
-      case 'r': if (inModel) setShowWaterSim(v => !v); break
+      case 'c': if (inModel) { setShowCrane(v => !v); setScenarioFocus('crane') } break
+      case 'q': if (inModel) { setShowEarthquake(v => !v); setHasShaken(false); setScenarioFocus('earthquake') } break
+      case 'w': if (inModel) { setShowWindArrows(v => !v); setScenarioFocus('wind') } break
+      case 'r': if (inModel) { setShowWaterSim(v => !v); setScenarioFocus('rain') } break
       case 'i': if (inModel) handleToggleFireMode(); break
       case 't': if (inModel) setShowThermal(v => !v); break
       case 'a': if (inModel) setShowAcoustic(v => !v); break
@@ -691,6 +694,54 @@ export default function App() {
     try { await navigator.clipboard.writeText(caption) } catch { /* clipboard unavailable */ }
   }
 
+  const activeScenarios = [
+    showEarthquake && {
+      id: 'earthquake', label: 'Earthquake response', shortLabel: 'Quake',
+      question: 'Which storey is most sensitive to this ground motion?',
+      stage: quakeDone ? 4 : (isShaking || earthquakeCountdown != null) ? 2 : 1,
+      evidence: quakeDone
+        ? `${quakeResult.worst.name}: ${quakeResult.worst.level.label.toLowerCase()} at ${quakePga.toFixed(2)} g.`
+        : (isShaking || earthquakeCountdown != null) ? 'The selected ground motion is running on the storey model.' : 'Set the motion, direction and structural system, then shake.',
+      alternative: quakeSystem === 'standard' ? 'Run the same motion with damping or base isolation.' : 'Return to the standard system with the same motion for a baseline.',
+    },
+    showWindArrows && {
+      id: 'wind', label: 'Wind exposure', shortLabel: 'Wind',
+      question: 'Where does this wind direction create the strongest pressure or uplift?',
+      stage: windResult?.busy ? 2 : windResult ? 4 : 1,
+      evidence: windResult?.busy ? 'Wind exposure is being computed on visible model faces.' : windResult
+        ? `${Math.round(windResult.baseShearKN).toLocaleString()} kN base shear; ${(windResult.peakPa / 1000).toFixed(2)} kPa peak pressure.`
+        : 'Set the base wind, direction and terrain.',
+      alternative: 'Keep speed and terrain fixed, then test the opposite wind direction.',
+    },
+    showWaterSim && {
+      id: 'rain', label: 'Rain and runoff', shortLabel: 'Rain',
+      question: 'Where does water collect before it reaches the ground or a drain?',
+      stage: waterResult?.busy ? 2 : waterResult ? 4 : 1,
+      evidence: waterResult?.busy ? 'Water paths are being traced across visible surfaces.' : waterResult
+        ? `${waterResult.pondParts.length} collection areas; ${waterResult.runoffM3h.toFixed(1)} m³/h runoff.`
+        : 'Choose a rainfall intensity to trace water across the model.',
+      alternative: 'Compare normal rain with a 100 mm/h cloudburst using the same visible model.',
+    },
+    fireMode && {
+      id: 'fire', label: 'Fire spread', shortLabel: 'Fire',
+      question: 'Which elements and compartments allow this fire to spread?',
+      stage: anyBurning ? 2 : Object.keys(fireState).length ? 4 : 1,
+      evidence: anyBurning
+        ? `${Object.values(fireState).filter(v => v === 'burning').length} burning; ${Object.values(fireState).filter(v => v === 'failed').length} failed.`
+        : Object.keys(fireState).length ? 'The active fire is out; inspect failed and protected elements.' : 'Set the intensity, then ignite a test element.',
+      alternative: 'Repeat from the same area after inspecting fire ratings and compartment boundaries.',
+    },
+    showCrane && {
+      id: 'crane', label: 'Crane and lift', shortLabel: 'Crane',
+      question: 'Can the current part be lifted safely from the proposed crane position?',
+      stage: currentPartWeight > 0 ? 4 : sequenceMode ? 2 : 1,
+      evidence: currentPartWeight > 0
+        ? `Current lift weighs ${(currentPartWeight / 1000).toFixed(1)} t; inspect reach and utilisation below.`
+        : sequenceMode ? 'Advance the build sequence to evaluate a lift.' : 'Start the build sequence or plan a ground-to-installation lift path.',
+      alternative: 'Compare a different crane position or installation order with the same part.',
+    },
+  ].filter(Boolean)
+
   if (isLoading) {
     return (
       <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', color: 'white', background: '#2c3e50' }}>
@@ -731,13 +782,13 @@ export default function App() {
         canUndo={canUndo}
         canRedo={canRedo}
         showCrane={showCrane}
-        onToggleCrane={() => setShowCrane(v => !v)}
+        onToggleCrane={() => { setShowCrane(v => !v); setScenarioFocus('crane') }}
         showEarthquake={showEarthquake}
-        onToggleEarthquake={() => { setShowEarthquake(v => !v); setHasShaken(false) }}
+        onToggleEarthquake={() => { setShowEarthquake(v => !v); setHasShaken(false); setScenarioFocus('earthquake') }}
         showWindArrows={showWindArrows}
-        onToggleWindArrows={() => setShowWindArrows(v => !v)}
+        onToggleWindArrows={() => { setShowWindArrows(v => !v); setScenarioFocus('wind') }}
         showWaterSim={showWaterSim}
-        onToggleWaterSim={() => setShowWaterSim(v => !v)}
+        onToggleWaterSim={() => { setShowWaterSim(v => !v); setScenarioFocus('rain') }}
         showThermal={showThermal}
         onToggleThermal={() => setShowThermal(v => !v)}
         showAcoustic={showAcoustic}
@@ -882,6 +933,9 @@ export default function App() {
 
       {/* Simulation panels stack bottom-right. */}
       <Suspense fallback={null}><div className="sim-dock">
+        {activeScenarios.length > 0 && (
+          <ScenarioWorkbench scenarios={activeScenarios} activeId={scenarioFocus} onSelect={setScenarioFocus} />
+        )}
         {showCrane && (
           <CranePanel
             sequenceMode={sequenceMode}
