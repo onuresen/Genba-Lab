@@ -29,6 +29,7 @@ const FirePanel = lazy(() => import('./components/FirePanel'))
 const RainPanel = lazy(() => import('./components/RainPanel'))
 const WindPanel = lazy(() => import('./components/WindPanel'))
 const ScenarioWorkbench = lazy(() => import('./components/ScenarioWorkbench'))
+const ModelReadinessPanel = lazy(() => import('./components/ModelReadinessPanel'))
 
 // Build playback: 1× places the whole model in about 45 s, whatever its size.
 const BUILD_SECONDS = 45
@@ -64,6 +65,7 @@ export default function App() {
   const [seqSpeed, setSeqSpeed] = useState(1)
 
   const [showMetrics, setShowMetrics] = useState(false)
+  const [showReadiness, setShowReadiness] = useState(false)
   const [showDimensions, setShowDimensions] = useState(false)
   // Connection lines clutter real models; off by default.
   const [showConnections, setShowConnections] = useState(false)
@@ -556,6 +558,7 @@ export default function App() {
     if (e.key === 'Escape') {
       if (showShortcuts) setShowShortcuts(false)
       else if (showFloorPlan) setShowFloorPlan(false)
+      else if (showReadiness) setShowReadiness(false)
       else if (selected) clearSelection()
       else if (showMetrics) setShowMetrics(false)
       return
@@ -773,6 +776,8 @@ export default function App() {
         onToggleDimensions={() => setShowDimensions(v => !v)}
         showMetrics={showMetrics}
         onToggleMetrics={() => setShowMetrics(v => !v)}
+        showReadiness={showReadiness}
+        onToggleReadiness={() => setShowReadiness(v => !v)}
         factoryMode={factoryMode}
         onToggleFactoryMode={toggleFactoryMode}
         sequenceMode={sequenceMode}
@@ -927,6 +932,10 @@ export default function App() {
           highlightedWeek={highlightedWeek}
           onHighlightWeek={w => setHighlightedWeek(w)}
         />
+      )}</Suspense>
+
+      <Suspense fallback={null}>{showReadiness && (
+        <ModelReadinessPanel onClose={() => setShowReadiness(false)} />
       )}</Suspense>
 
       <Suspense fallback={null}>{showShortcuts && <ShortcutsModal onClose={() => setShowShortcuts(false)} />}</Suspense>

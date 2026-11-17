@@ -4,6 +4,7 @@ import {
   Ruler, Link2, BarChart3, Undo2, Redo2, Layers, Zap,
   Clapperboard, Activity, Wind, LayoutTemplate,
   Droplets, Menu, X, Flame, Shield, Thermometer, Volume2, Factory, HardHat,
+  ListChecks,
 } from 'lucide-react'
 import ShareButton from './ShareButton'
 
@@ -72,6 +73,7 @@ export default function Toolbar({
   showWaterSim, onToggleWaterSim,
   showThermal, onToggleThermal,
   showAcoustic, onToggleAcoustic,
+  showReadiness, onToggleReadiness,
   onShowFloorPlan,
   fireMode, onToggleFireMode,
   showFireCompartments, onToggleFireCompartments,
@@ -134,6 +136,7 @@ export default function Toolbar({
         <div className="toolbar-sep" />
 
         <Group label="Analyze" workspace="review" activeWorkspace={activeWorkspace}>
+          <ToolButton {...t} icon={ListChecks} label="Model readiness" hint="IFC evidence, estimates and test limits" active={showReadiness} onClick={onToggleReadiness} />
           <ToolButton {...t} icon={Thermometer} label="Thermal bridges" hint="Heat loss at joints" keyName="T" active={showThermal} onClick={onToggleThermal} disabled={factoryMode} />
           <ToolButton {...t} icon={Volume2} label="Acoustics" hint="Sound insulation by part" keyName="A" active={showAcoustic} onClick={onToggleAcoustic} disabled={factoryMode} />
           <ToolButton {...t} icon={BarChart3} label="Metrics" hint="Cost, carbon, BOM, schedule" keyName="M" active={showMetrics} onClick={onToggleMetrics} />

@@ -61,6 +61,13 @@ No Tailwind. Styles live in `src/App.css` plus inline styles. Dark mode via `[da
 - Multiple active simulations expose compact tabs. Toolbar buttons and keyboard shortcuts focus the matching investigation.
 - The workbench is lazy-loaded, collapsible, responsive, and adds no render loop or persisted data. See `docs/GROUP-1-SCENARIO-WORKBENCH.md`.
 
+### Group 2 model readiness
+
+- `modelReadiness.js` measures evidence coverage from the projected IFC parts: geometry, identity, storeys, materials, quantities, structure, fire ratings, and external classification.
+- `ModelReadinessPanel.jsx` maps that evidence to earthquake, wind, rain, fire, and crane readiness without turning it into a generic quality score.
+- The Review workspace opens the lazy panel. It reports declared/inferred boundaries plus source schema, OpenBIM Core version, and digest when available.
+- Readiness is an explanation of Genba's inputs, not IFC certification or engineering approval. See `docs/GROUP-2-MODEL-READINESS.md`.
+
 ### Data model: the "kit"
 Every simulation reads one array of **parts**. IFC import builds it (`ifcToKit.js`).
 
@@ -124,6 +131,7 @@ Every simulation reads one array of **parts**. IFC import builds it (`ifcToKit.j
 | `cinematicMode`, `rendererRef` | Demo tour, screenshots |
 | `showFloorPlan` | Floor plan modal |
 | `scenarioFocus` | Which active physical investigation the shared workbench explains |
+| `showReadiness` | Model Readiness panel open |
 
 **3. Component-level** — hover, refs, panel tabs.
 
@@ -188,6 +196,7 @@ Real models are 20–100 m, not the 5 m Assembly Lab sample kit. Never hard-code
 |---|---|
 | `Toolbar.jsx` | All toggles. |
 | `ScenarioWorkbench.jsx` | Shared question → inputs → run → evidence → alternative journey for physical investigations. |
+| `ModelReadinessPanel.jsx` | IFC evidence coverage and investigation-readiness explanation. |
 | `Sidebar.jsx` | Presets, layers, factory summary, `IfcLoadButton`. |
 | `IfcLoadButton.jsx` | LOAD IFC + progress. Also on the empty start screen. |
 | `InfoPanel.jsx` | Selected part: IFC data, variants (incl. what-if), stats, connections, environment. |
