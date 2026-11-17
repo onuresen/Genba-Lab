@@ -68,6 +68,13 @@ No Tailwind. Styles live in `src/App.css` plus inline styles. Dark mode via `[da
 - The Review workspace opens the lazy panel. It reports declared/inferred boundaries plus source schema, OpenBIM Core version, and digest when available.
 - Readiness is an explanation of Genba's inputs, not IFC certification or engineering approval. See `docs/GROUP-2-MODEL-READINESS.md`.
 
+### Group 3 scenario comparison
+
+- The Scenario Workbench captures completed runs as Baseline and Alternative snapshots of the same scenario type.
+- `scenarioComparison.js` compares numeric metrics and element IDs, returning newly affected, relieved, and unchanged elements.
+- Snapshots keep inputs, metrics, affected IDs, capture time, and the existing caveat. They are session-only and reset on model change.
+- Delta direction is not labelled good or bad: interpretation depends on the metric. See `docs/GROUP-3-SCENARIO-COMPARISON.md`.
+
 ### Data model: the "kit"
 Every simulation reads one array of **parts**. IFC import builds it (`ifcToKit.js`).
 
@@ -132,6 +139,7 @@ Every simulation reads one array of **parts**. IFC import builds it (`ifcToKit.j
 | `showFloorPlan` | Floor plan modal |
 | `scenarioFocus` | Which active physical investigation the shared workbench explains |
 | `showReadiness` | Model Readiness panel open |
+| `scenarioComparisons` | Session-only Baseline/Alternative captures keyed by scenario type |
 
 **3. Component-level** — hover, refs, panel tabs.
 

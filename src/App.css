@@ -999,6 +999,25 @@
 [data-theme="dark"] .scenario-workbench__evidence { background: #102f2d; }
 [data-theme="dark"] .scenario-workbench__evidence strong { color: #d7f4f0; }
 [data-theme="dark"] .scenario-workbench__alternative { border-color: #30454b; }
+.scenario-compare { margin: 0 10px 10px; padding-top: 8px; border-top: 1px solid #e5eeee; }
+.scenario-compare__title { display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px; }
+.scenario-compare__title span { color:#668081;font-size:9px;font-weight:800;letter-spacing:.09em;text-transform:uppercase; }
+.scenario-compare__title button { padding:2px 6px;color:#758788;background:transparent;border:0;font-size:8px;cursor:pointer;text-decoration:underline; }
+.scenario-compare__capture { display:grid;grid-template-columns:1fr 1fr;gap:5px; }
+.scenario-compare__capture button { padding:6px;border:1px solid #cbdcdd;border-radius:6px;color:#385c5d;background:#f8fbfb;font-size:9px;font-weight:800;cursor:pointer; }
+.scenario-compare__capture button:disabled { cursor:not-allowed;opacity:.42; }.scenario-compare__capture button.captured { color:#0f766e;border-color:#5eead4;background:#ccfbf1; }
+.scenario-compare__hint { margin:5px 0 0;color:#8a9a9a;font-size:8px; }
+.scenario-compare__results { margin-top:7px;padding:7px;background:#f7faf9;border:1px solid #e1eaea;border-radius:7px; }
+.scenario-compare__metric { display:grid;grid-template-columns:1fr auto auto;gap:6px;align-items:center;padding:3px 0;border-bottom:1px solid #e7eeee;font-size:8px; }
+.scenario-compare__metric strong { font-size:8px; }.scenario-compare__metric em { min-width:45px;text-align:right;color:#647677;font-size:8px;font-style:normal;font-weight:800; }
+.scenario-compare__metric em.up { color:#b4534b; }.scenario-compare__metric em.down { color:#0f766e; }
+.scenario-compare__elements { display:grid;grid-template-columns:repeat(3,1fr);gap:4px;margin-top:6px; }
+.scenario-compare__elements span { padding:4px 2px;text-align:center;background:white;border-radius:4px;color:#718283;font-size:7px; }.scenario-compare__elements strong { display:block;color:#234747;font-size:11px; }
+.scenario-compare details { margin-top:5px;color:#647677;font-size:8px; }.scenario-compare summary { cursor:pointer;font-weight:800; }.scenario-compare details p { margin:3px 0;line-height:1.35;overflow-wrap:anywhere; }
+[data-theme="dark"] .scenario-compare { border-color:#30454b; } [data-theme="dark"] .scenario-compare__capture button { color:#b9cccc;background:#172a31;border-color:#395057; }
+[data-theme="dark"] .scenario-compare__capture button.captured { color:#99f6e4;background:#134e4a;border-color:#0f766e; }
+[data-theme="dark"] .scenario-compare__results { background:#13262d;border-color:#30454b; } [data-theme="dark"] .scenario-compare__metric { border-color:#30454b; }
+[data-theme="dark"] .scenario-compare__elements span { background:#182d34; } [data-theme="dark"] .scenario-compare__elements strong { color:#d7f4f0; }
 
 /* ─── Model readiness ────────────────────────────────── */
 .readiness-panel {

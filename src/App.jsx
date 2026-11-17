@@ -18,6 +18,7 @@ import { buildStoreyModel, simulateQuake, structureLevels } from './utils/seismi
 import { prefersReducedMotion } from './utils/motion'
 import { canRecord, startCanvasRecording } from './utils/videoRecorder'
 import { focusBounds, focusContext } from './utils/focus'
+import { createScenarioSnapshot } from './utils/scenarioComparison'
 import './App.css'
 
 const MetricsPanel = lazy(() => import('./components/MetricsPanel'))
@@ -84,6 +85,7 @@ export default function App() {
   const [showCrane, setShowCrane] = useState(false)
   const [showCraneRadius, setShowCraneRadius] = useState(false)
   const [scenarioFocus, setScenarioFocus] = useState('earthquake')
+  const [scenarioComparisons, setScenarioComparisons] = useState({})
   const [cinematicMode, setCinematicMode] = useState(false)
   const rendererRef = useRef(null)
 
@@ -153,17 +155,18 @@ export default function App() {
     () => [...parts].sort((a, b) => (a.sequence ?? 99) - (b.sequence ?? 99)),
     [parts]
   )
-  const currentPartWeight = (() => {
-    if (!sequenceMode || sequenceStep <= 0) return 0
-    const part = sortedParts[sequenceStep - 1]
-    if (!part) return 0
-    const variantIdx = selectedVariants[part.id] ?? 0
-    return part.variants[variantIdx]?.weight_kg ?? 0
-  })()
+  const currentSequencePart = sequenceMode && sequenceStep > 0 ? sortedParts[sequenceStep - 1] : null
+  const currentPartWeight = currentSequencePart
+    ? currentSequencePart.variants[selectedVariants[currentSequencePart.id] ?? 0]?.weight_kg ?? 0
+    : 0
 
   useEffect(() => {
     localStorage.setItem('genba-lab-dark', darkMode)
   }, [darkMode])
+
+  useEffect(() => {
+    setScenarioComparisons({})
+  }, [modelKey])
 
   // ── Handlers ─────────────────────────────────────────────
   function togglePart(id) {
@@ -697,6 +700,22 @@ export default function App() {
     try { await navigator.clipboard.writeText(caption) } catch { /* clipboard unavailable */ }
   }
 
+  function captureScenario(scenarioId, slot, snapshot) {
+    if (!snapshot) return
+    setScenarioComparisons(current => ({
+      ...current,
+      [scenarioId]: { ...current[scenarioId], [slot]: snapshot },
+    }))
+  }
+
+  function clearScenarioComparison(scenarioId) {
+    setScenarioComparisons(current => {
+      const next = { ...current }
+      delete next[scenarioId]
+      return next
+    })
+  }
+
   const activeScenarios = [
     showEarthquake && {
       id: 'earthquake', label: 'Earthquake response', shortLabel: 'Quake',
@@ -706,6 +725,17 @@ export default function App() {
         ? `${quakeResult.worst.name}: ${quakeResult.worst.level.label.toLowerCase()} at ${quakePga.toFixed(2)} g.`
         : (isShaking || earthquakeCountdown != null) ? 'The selected ground motion is running on the storey model.' : 'Set the motion, direction and structural system, then shake.',
       alternative: quakeSystem === 'standard' ? 'Run the same motion with damping or base isolation.' : 'Return to the standard system with the same motion for a baseline.',
+      snapshot: quakeDone ? createScenarioSnapshot({
+        scenarioId: 'earthquake', label: 'Earthquake response',
+        inputs: { pga: quakePga, motion: quakeMotion, system: quakeSystem, direction: quakeDir },
+        metrics: [
+          { key: 'drift', label: 'Worst storey drift', value: quakeResult.worst.driftRatio * 100, unit: '%' },
+          { key: 'roof', label: 'Top floor movement', value: quakeResult.roofCm, unit: 'cm' },
+          { key: 'strength', label: 'Strength used', value: quakeResult.strengthUsed * 100, unit: '%' },
+        ],
+        affectedIds: Object.entries(quakeLevels ?? {}).filter(([, v]) => v.key !== 'ok').map(([id]) => id),
+        caveat: 'Shear-building model; no torsion or soil.',
+      }) : null,
     },
     showWindArrows && {
       id: 'wind', label: 'Wind exposure', shortLabel: 'Wind',
@@ -715,6 +745,16 @@ export default function App() {
         ? `${Math.round(windResult.baseShearKN).toLocaleString()} kN base shear; ${(windResult.peakPa / 1000).toFixed(2)} kPa peak pressure.`
         : 'Set the base wind, direction and terrain.',
       alternative: 'Keep speed and terrain fixed, then test the opposite wind direction.',
+      snapshot: windResult && !windResult.busy ? createScenarioSnapshot({
+        scenarioId: 'wind', label: 'Wind exposure',
+        inputs: { speed: windSpeed, direction: windDir, terrain: windTerrain },
+        metrics: [
+          { key: 'shear', label: 'Base shear', value: windResult.baseShearKN, unit: 'kN' },
+          { key: 'pressure', label: 'Peak pressure', value: windResult.peakPa / 1000, unit: 'kPa' },
+          { key: 'overturning', label: 'Overturning moment', value: windResult.overturnKNm, unit: 'kN·m' },
+        ],
+        affectedIds: [...windResult.partForces.keys()], caveat: 'Simplified BSL method; no wind tunnel or internal pressure.',
+      }) : null,
     },
     showWaterSim && {
       id: 'rain', label: 'Rain and runoff', shortLabel: 'Rain',
@@ -724,6 +764,15 @@ export default function App() {
         ? `${waterResult.pondParts.length} collection areas; ${waterResult.runoffM3h.toFixed(1)} m³/h runoff.`
         : 'Choose a rainfall intensity to trace water across the model.',
       alternative: 'Compare normal rain with a 100 mm/h cloudburst using the same visible model.',
+      snapshot: waterResult && !waterResult.busy ? createScenarioSnapshot({
+        scenarioId: 'rain', label: 'Rain and runoff', inputs: { rainfall },
+        metrics: [
+          { key: 'runoff', label: 'Runoff', value: waterResult.runoffM3h, unit: 'm³/h' },
+          { key: 'pond', label: 'Ponding share', value: waterResult.share.pond * 100, unit: '%' },
+          { key: 'drain', label: 'Drain share', value: waterResult.share.drain * 100, unit: '%' },
+        ],
+        affectedIds: waterResult.pondParts.map(p => p.partId), caveat: 'Surface tracer; no gutter capacity or soaking-in.',
+      }) : null,
     },
     fireMode && {
       id: 'fire', label: 'Fire spread', shortLabel: 'Fire',
@@ -733,6 +782,14 @@ export default function App() {
         ? `${Object.values(fireState).filter(v => v === 'burning').length} burning; ${Object.values(fireState).filter(v => v === 'failed').length} failed.`
         : Object.keys(fireState).length ? 'The active fire is out; inspect failed and protected elements.' : 'Set the intensity, then ignite a test element.',
       alternative: 'Repeat from the same area after inspecting fire ratings and compartment boundaries.',
+      snapshot: !anyBurning && Object.keys(fireState).length ? createScenarioSnapshot({
+        scenarioId: 'fire', label: 'Fire spread', inputs: { intensity: fireIntensity },
+        metrics: [
+          { key: 'failed', label: 'Failed elements', value: Object.values(fireState).filter(v => v === 'failed').length, unit: '' },
+          { key: 'elapsed', label: 'Elapsed time', value: fireElapsed, unit: 's' },
+        ],
+        affectedIds: Object.entries(fireState).filter(([, v]) => v !== 'ok').map(([id]) => id), caveat: 'Adjacency spread model; not a fire engineering analysis.',
+      }) : null,
     },
     showCrane && {
       id: 'crane', label: 'Crane and lift', shortLabel: 'Crane',
@@ -742,6 +799,11 @@ export default function App() {
         ? `Current lift weighs ${(currentPartWeight / 1000).toFixed(1)} t; inspect reach and utilisation below.`
         : sequenceMode ? 'Advance the build sequence to evaluate a lift.' : 'Start the build sequence or plan a ground-to-installation lift path.',
       alternative: 'Compare a different crane position or installation order with the same part.',
+      snapshot: currentSequencePart && currentPartWeight > 0 ? createScenarioSnapshot({
+        scenarioId: 'crane', label: 'Crane and lift', inputs: { sequenceStep, partId: currentSequencePart.id },
+        metrics: [{ key: 'weight', label: 'Lift weight', value: currentPartWeight / 1000, unit: 't' }],
+        affectedIds: [currentSequencePart.id], caveat: 'Capacity remains dependent on the radius shown in the crane panel.',
+      }) : null,
     },
   ].filter(Boolean)
 
@@ -943,7 +1005,8 @@ export default function App() {
       {/* Simulation panels stack bottom-right. */}
       <Suspense fallback={null}><div className="sim-dock">
         {activeScenarios.length > 0 && (
-          <ScenarioWorkbench scenarios={activeScenarios} activeId={scenarioFocus} onSelect={setScenarioFocus} />
+          <ScenarioWorkbench scenarios={activeScenarios} activeId={scenarioFocus} onSelect={setScenarioFocus}
+            records={scenarioComparisons} onCapture={captureScenario} onClear={clearScenarioComparison} />
         )}
         {showCrane && (
           <CranePanel
